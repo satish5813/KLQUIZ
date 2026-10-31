@@ -1,0 +1,40 @@
+KL University Entrance Examination Portal — Backup & Restore
+==============================================================
+
+This backup contains
+  KLStudentQuizAPP.zip     the complete application, ready to run:
+                             server/, public/        application code
+                             node_modules/           libraries (no internet needed)
+                             data/klquiz.db          database snapshot (questions, tests, students, results)
+                             .env                    secrets: admin password, encryption keys, Gemini API key
+  klquiz-<date>.db         the same database snapshot as a separate file
+  RESTORE.txt              this guide
+
+KEEP THIS PEN DRIVE SAFE. The .env file contains the admin password and the Gemini API key.
+Anyone with this drive can open the admin portal and use the API key.
+
+
+RESTORE ON ANOTHER (OR THE SAME) COMPUTER
+-----------------------------------------
+1. Install Node.js 22.13 or newer (https://nodejs.org) — only needed once.
+2. Unzip KLStudentQuizAPP.zip to a folder, e.g. D:\KLStudentQuizAPP
+3. Open a terminal in that folder and run:
+       npm start
+4. Open  http://localhost:3000/        (student portal)
+         http://localhost:3000/admin/  (admin portal; user "admin", password = ADMIN_PASSWORD in .env)
+
+Do NOT delete or change .env: APP_SECRET in it is needed to read the saved pass keys and Gemini key.
+
+
+RESTORE ONLY THE DATABASE (app already installed)
+-------------------------------------------------
+1. Stop the server (Ctrl+C in its terminal).
+2. In the app folder, delete data\klquiz.db-wal and data\klquiz.db-shm if they exist.
+3. Copy klquiz-<date>.db to data\klquiz.db (replace the old file).
+4. Use the .env from this backup (same APP_SECRET), then run  npm start
+
+
+MAKING A NEW BACKUP LATER
+-------------------------
+Copy the whole app folder while the server is stopped, or ask for a fresh snapshot.
+Copying data\klquiz.db alone while the server is running can produce an incomplete copy.

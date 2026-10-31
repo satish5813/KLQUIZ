@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>KL Admissions Entrance Examinations 2027</title>
+  <link rel="icon" href="/img/klu-logo.webp">
+  <link rel="stylesheet" href="/css/style.css">
+  <link rel="stylesheet" href="/css/student.css">
+</head>
+<body>
+  <header class="topbar">
+    <img src="/img/klu-logo.webp" alt="KL University" class="logo">
+    <div class="title">KL Admissions Entrance Examinations 2027<small>Online Examination Portal</small></div>
+  </header>
+
+  <section class="hero">
+    <div class="container">
+      <h1>Welcome, candidate</h1>
+      <p>Register with your details, enter the session pass key given by the invigilator, and begin your examination.</p>
+      <ol class="flow"><li class="on" id="f1">Register</li><li id="f2">Pass key</li><li id="f3">Instructions</li><li id="f4">Exam</li><li id="f5">Result</li></ol>
+    </div>
+  </section>
+
+  <main class="container narrow">
+    <div id="err" class="alert error hidden" role="alert"></div>
+
+    <!-- Step 1: registration -->
+    <form id="regForm" class="card" autocomplete="on" novalidate>
+      <h2>Candidate registration</h2>
+      <div class="field">
+        <label for="test">Examination</label>
+        <select id="test" required></select>
+        <div class="hint" id="testInfo"></div>
+      </div>
+      <div class="field"><label for="full_name">Full name (as in 10th certificate)</label>
+        <input id="full_name" type="text" required minlength="3" maxlength="120" autocomplete="name"></div>
+      <div class="field"><label for="address">Address</label>
+        <textarea id="address" required minlength="5" maxlength="500" rows="3" autocomplete="street-address"></textarea></div>
+      <div class="field"><label for="email">Email ID</label>
+        <input id="email" type="email" required maxlength="254" autocomplete="email"></div>
+      <div class="grid-2">
+        <div class="field"><label for="mobile">Mobile number</label>
+          <input id="mobile" type="tel" required inputmode="numeric" maxlength="13" pattern="[0-9+]{10,13}" autocomplete="tel" placeholder="10-digit mobile"></div>
+        <div class="field"><label for="parent_mobile">Parent mobile number</label>
+          <input id="parent_mobile" type="tel" required inputmode="numeric" maxlength="13" pattern="[0-9+]{10,13}" placeholder="10-digit mobile"></div>
+      </div>
+      <label class="check mb"><input type="checkbox" id="agree" required> I confirm the details above are correct and I will follow the examination rules.</label>
+      <button class="btn block lg" type="submit" id="regBtn">Submit &amp; continue</button>
+      <p class="small muted mt">Already registered and got disconnected? Enter the same email and mobile number to resume your exam.</p>
+    </form>
+
+    <!-- Step 2: pass key -->
+    <form id="keyForm" class="card hidden" autocomplete="off">
+      <h2>Enter session pass key</h2>
+      <p id="hello" class="muted"></p>
+      <div class="field"><label for="passkey">Pass key (announced by the invigilator)</label>
+        <input id="passkey" type="password" required maxlength="64" class="passkey-input" autocomplete="off" spellcheck="false"></div>
+      <button class="btn block lg" type="submit" id="keyBtn">Unlock exam</button>
+      <button class="btn ghost block mt" type="button" id="backBtn">← Edit my details</button>
+    </form>
+
+    <div id="noTests" class="card hidden">
+      <h2>No examination is open right now</h2>
+      <p class="muted">Please wait for the invigilator to start the session, then refresh this page.</p>
+      <button class="btn" type="button" id="refreshBtn">Refresh</button>
+    </div>
+  </main>
+  <footer class="footer">© KL University (Deemed to be University) · Koneru Lakshmaiah Education Foundation</footer>
+  <script src="/js/common.js"></script>
+  <script src="/js/register.js"></script>
+</body>
+</html>

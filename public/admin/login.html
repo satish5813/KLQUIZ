@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <title>Admin Login · KL Entrance Exams</title>
+  <link rel="icon" href="/img/klu-logo.webp">
+  <link rel="stylesheet" href="/css/style.css">
+  <link rel="stylesheet" href="/admin/admin.css">
+</head>
+<body class="login-page">
+  <main class="login-box card">
+    <img src="/img/klu-logo.webp" alt="KL University" class="login-logo">
+    <h1>Admin Portal</h1>
+    <p class="muted">KL Admissions Entrance Examinations 2027</p>
+    <div id="err" class="alert error hidden"></div>
+    <form id="loginForm" autocomplete="off">
+      <div class="field"><label for="u">Username</label><input id="u" type="text" required maxlength="64" autocomplete="username"></div>
+      <div class="field"><label for="p">Password</label><input id="p" type="password" required maxlength="200" autocomplete="current-password"></div>
+      <button class="btn block lg" type="submit" id="go">Sign in</button>
+    </form>
+  </main>
+  <script src="/js/common.js"></script>
+  <script src="/admin/login.js"></script>
+</body>
+</html>

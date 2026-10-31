@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <title>Admin Portal · KL Entrance Exams</title>
+  <link rel="icon" href="/img/klu-logo.webp">
+  <link rel="stylesheet" href="/css/style.css">
+  <link rel="stylesheet" href="/admin/admin.css">
+  <link rel="stylesheet" href="/vendor/katex/katex.min.css">
+</head>
+<body>
+  <header class="topbar">
+    <button class="btn secondary sm menu-btn" id="menuBtn" type="button" aria-label="Menu">☰</button>
+    <img src="/img/klu-logo.webp" alt="KL University" class="logo">
+    <div class="title">Entrance Examination Admin Portal<small>KL Admissions 2027</small></div>
+    <div class="spacer"></div>
+    <span class="muted small" id="who"></span>
+    <button class="btn secondary sm" id="logoutBtn" type="button">Logout</button>
+  </header>
+  <div class="admin-shell">
+    <nav class="sidebar" id="sidebar">
+      <div class="sec">Overview</div>
+      <a href="#/dashboard" data-nav="dashboard"><span class="ico">▦</span>Dashboard</a>
+      <div class="sec">Exam setup</div>
+      <a href="#/patterns" data-nav="patterns"><span class="ico">☰</span>Exam Patterns</a>
+      <a href="#/tests" data-nav="tests"><span class="ico">✎</span>Tests</a>
+      <a href="#/bank" data-nav="bank"><span class="ico">❖</span>Question Bank</a>
+      <div class="sec">System</div>
+      <a href="#/settings" data-nav="settings"><span class="ico">⚙</span>Settings</a>
+      <a href="/" target="_blank" rel="noopener"><span class="ico">↗</span>Student Portal</a>
+    </nav>
+    <main class="main" id="view"></main>
+  </div>
+  <script src="/vendor/katex/katex.min.js"></script>
+  <script src="/vendor/katex/contrib/mhchem.min.js"></script>
+  <script src="/vendor/dompurify/purify.min.js"></script>
+  <script src="/vendor/smiles-drawer/smiles-drawer.min.js"></script>
+  <script src="/js/common.js"></script>
+  <script src="/js/render.js"></script>
+  <script src="/admin/admin.js"></script>
+</body>
+</html>

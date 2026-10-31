@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <title>Examination · KL University</title>
+  <link rel="icon" href="/img/klu-logo.webp">
+  <link rel="stylesheet" href="/css/style.css">
+  <link rel="stylesheet" href="/css/student.css">
+  <link rel="stylesheet" href="/vendor/katex/katex.min.css">
+</head>
+<body>
+  <!-- Instructions -->
+  <div id="instrView" class="hidden">
+    <header class="topbar">
+      <img src="/img/klu-logo.webp" alt="KL University" class="logo">
+      <div class="title" id="iTitle">Examination<small>KL Admissions Entrance Examinations 2027</small></div>
+      <div class="spacer"></div>
+      <button class="btn secondary sm" id="logoutBtn" type="button">Logout</button>
+    </header>
+    <main class="container">
+      <div id="iErr" class="alert error hidden"></div>
+      <div class="grid-2">
+        <div class="card">
+          <h3>Candidate</h3>
+          <p id="iCand"></p>
+        </div>
+        <div class="card">
+          <h3>Exam pattern</h3>
+          <div class="table-wrap"><table class="table"><thead><tr><th>Section</th><th>Questions</th></tr></thead><tbody id="iSecs"></tbody></table></div>
+          <p class="small muted" id="iMarks"></p>
+        </div>
+      </div>
+      <div class="card">
+        <h3>Instructions — read carefully</h3>
+        <div class="instr" id="iText"></div>
+        <label class="check mt"><input type="checkbox" id="iAgree"> I have read and understood the instructions. I agree to write the exam in full-screen mode without switching tabs or windows.</label>
+        <div class="row mt">
+          <button class="btn lg green" id="startBtn" type="button" disabled>Start exam</button>
+          <span class="muted small" id="iNote"></span>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <!-- Exam -->
+  <div id="examView" class="hidden">
+    <header class="exam-top">
+      <img src="/img/klu-logo.webp" alt="KL University" class="logo">
+      <div class="t" id="eTitle"></div>
+      <div class="spacer grow"></div>
+      <div class="cand" id="eCand"></div>
+      <div>
+        <div class="small muted" style="text-align:center">Time left</div>
+        <div class="timer" id="timer">--:--:--</div>
+      </div>
+      <button class="btn secondary sm palette-toggle" id="palBtn" type="button">☰</button>
+    </header>
+    <nav class="sec-tabs" id="secTabs"></nav>
+    <div class="exam-body">
+      <section class="q-pane">
+        <div class="q-scroll" id="qScroll">
+          <div class="watermark" id="wm" aria-hidden="true"></div>
+          <div class="q-meta">
+            <b id="qNo"></b>
+            <span class="small muted" id="qMarks"></span>
+            <span class="small" id="saveState"></span>
+          </div>
+          <div class="q-text" id="qText"></div>
+          <div id="qFig"></div>
+          <div class="opts" id="opts"></div>
+        </div>
+        <div class="q-actions">
+          <button class="btn secondary" id="prevBtn" type="button">← Previous</button>
+          <button class="btn secondary" id="clearBtn" type="button">Clear response</button>
+          <div class="grow"></div>
+          <button class="btn purple" id="markBtn" type="button">Mark for review &amp; next</button>
+          <button class="btn green" id="nextBtn" type="button">Save &amp; next →</button>
+        </div>
+      </section>
+      <aside class="palette" id="palette">
+        <div class="ph"><b id="palTitle"></b><div class="small muted" id="palSub"></div></div>
+        <div class="legend">
+          <span><i class="st-a" id="lgA">0</i>Answered</span>
+          <span><i class="st-na" id="lgNA">0</i>Not answered</span>
+          <span><i class="st-nv" id="lgNV">0</i>Not visited</span>
+          <span><i class="st-m" id="lgM">0</i>Marked</span>
+          <span><i class="st-am" id="lgAM">0</i>Answered &amp; marked</span>
+        </div>
+        <div class="pgrid" id="pgrid"></div>
+        <div class="pf">
+          <div class="small muted mb" id="violInfo"></div>
+          <button class="btn block lg" id="submitBtn" type="button">Submit exam</button>
+        </div>
+      </aside>
+    </div>
+  </div>
+
+  <div class="overlay hidden" id="fsOverlay">
+    <div class="box">
+      <h2>⚠ You left full-screen mode</h2>
+      <p id="fsMsg">This has been recorded as a violation. Return to full screen to continue your exam.</p>
+      <button class="btn lg" id="fsBtn" type="button">Return to full screen</button>
+    </div>
+  </div>
+
+  <script src="/vendor/katex/katex.min.js"></script>
+  <script src="/vendor/katex/contrib/mhchem.min.js"></script>
+  <script src="/vendor/dompurify/purify.min.js"></script>
+  <script src="/vendor/smiles-drawer/smiles-drawer.min.js"></script>
+  <script src="/js/common.js"></script>
+  <script src="/js/render.js"></script>
+  <script src="/js/exam.js"></script>
+</body>
+</html>
