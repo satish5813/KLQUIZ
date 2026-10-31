@@ -9,3 +9,6 @@ data/
 !.env.example
 .claude/
 *.log
+# Published database snapshot (no admin hashes, pass keys or student data)
+!backups/
+!backups/klquiz-backup.db
