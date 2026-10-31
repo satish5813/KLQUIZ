@@ -5,9 +5,27 @@ require('katex/contrib/mhchem');
 
 // When an LLM under-escapes JSON, "\frac" arrives as form-feed + "rac", "\theta" as tab + "heta", etc.
 // Restore those control characters to the LaTeX commands they came from.
+// LaTeX commands that start with "\n" — never turned into line breaks.
+const LATEX_N = /^(u|eq|e\b|abla|eg|ot|i\b|exists|leq|geq|parallel|mid|subset|supset|leftarrow|rightarrow|cong|sim|vdash|ewline)/;
+const KEEP_SPANS = /(\$\$[\s\S]+?\$\$|\$[^$\n]+?\$|"(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*')/;
+
+// Over-escaped JSON can leave a literal backslash-n where a line break was meant. Convert those,
+// leaving formulas and quoted code strings (e.g. cout << "\n") untouched.
+function literalNewlines(s) {
+  if (!s.includes('\\n')) return s;
+  return s.split(KEEP_SPANS).map((p, i) => {
+    if (i % 2) return p;
+    let out = '';
+    for (let k = 0; k < p.length; k++) {
+      if (p[k] === '\\' && p[k + 1] === 'n' && !LATEX_N.test(p.slice(k + 2))) { out += '\n'; k++; } else out += p[k];
+    }
+    return out;
+  }).join('');
+}
+
 function repairEscapes(s) {
   if (typeof s !== 'string') return s;
-  return s
+  return literalNewlines(s)
     .replace(/\f/g, '\\f')
     .replace(/\x08/g, '\\b')
     .replace(/\t(?=[a-zA-Z])/g, '\\t')

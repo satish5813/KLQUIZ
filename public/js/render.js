@@ -4,6 +4,23 @@
   const MATH_RE = /\$\$([\s\S]+?)\$\$|\$([^$\n]+?)\$/g;
   const KATEX_OPTS = { throwOnError: false, trust: false, strict: 'ignore', maxSize: 20, maxExpand: 500 };
 
+  // Plain text with *phrase* (italic, e.g. the part to improve in a sentence) and **phrase** (bold).
+  // The phrase is inserted as a text node inside <em>/<strong>, never as HTML.
+  const EMPH_RE = /\*\*(\S(?:[^*\n]*?\S)?)\*\*|\*(\S(?:[^*\n]*?\S)?)\*/g;
+  function appendText(node, s) {
+    let last = 0;
+    let m;
+    EMPH_RE.lastIndex = 0;
+    while ((m = EMPH_RE.exec(s))) {
+      if (m.index > last) node.appendChild(document.createTextNode(s.slice(last, m.index)));
+      const e = document.createElement(m[1] !== undefined ? 'strong' : 'em');
+      e.textContent = m[1] !== undefined ? m[1] : m[2];
+      node.appendChild(e);
+      last = EMPH_RE.lastIndex;
+    }
+    if (last < s.length) node.appendChild(document.createTextNode(s.slice(last)));
+  }
+
   // Fills `node` with text and typeset formulas. Text is only ever inserted as text nodes.
   function rich(node, text) {
     while (node.firstChild) node.removeChild(node.firstChild);
@@ -12,7 +29,7 @@
     let m;
     MATH_RE.lastIndex = 0;
     while ((m = MATH_RE.exec(s))) {
-      if (m.index > last) node.appendChild(document.createTextNode(s.slice(last, m.index)));
+      if (m.index > last) appendText(node, s.slice(last, m.index));
       const display = !!m[1];
       const span = document.createElement(display ? 'div' : 'span');
       span.className = display ? 'math-display' : 'math-inline';
@@ -21,7 +38,7 @@
       node.appendChild(span);
       last = MATH_RE.lastIndex;
     }
-    if (last < s.length) node.appendChild(document.createTextNode(s.slice(last)));
+    if (last < s.length) appendText(node, s.slice(last));
     return node;
   }
 

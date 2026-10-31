@@ -150,3 +150,5 @@ table.table { width: 100%; border-collapse: collapse; font-size: .9rem; }
 ol.structures { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
 ol.structures li { border: 1px solid var(--line); }
 .q-item .mark { font-weight: 700; white-space: nowrap; }
+/* *phrase* in question text: the portion to improve / a title — underlined as exam papers do */
+.q-text em, .opt .tx em, .q-item li em, .expl em { font-style: italic; text-decoration: underline; text-underline-offset: 3px; }

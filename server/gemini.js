@@ -125,6 +125,7 @@ async function generateQuestions({ examName, subject, syllabus, count, difficult
   const seen = new Set(existing.map(norm));
   const out = [];
   const rejected = [];
+  let lastError = null;
   let attempts = 0;
   while (out.length < count && attempts < Math.ceil(count / BATCH) + 3) {
     attempts++;
@@ -148,7 +149,7 @@ Content rules:
 - Give a concise explanation (1-3 sentences, showing the key formula/step) and the syllabus unit as "topic".
 - Label each question's difficulty honestly: "easy" = direct recall or one-step formula use; "medium" = two or three steps or combining two ideas; "hard" = multi-concept, lengthy or tricky (JEE-Main level).
 - If the section needs a passage, data table or statement set (e.g. Reading Comprehension, Data Interpretation), include it in the question text using line breaks.
-- No Markdown. Never use "$" for money (write ₹).
+- No Markdown, except: wrap a phrase in *single asterisks* to italicise it (e.g. the part of a sentence to be improved, or a book title); use "____" for a blank. Never use "$" for money (write ₹).
 - Data tables (data interpretation, caselets): typeset them as a LaTeX array on their own line, e.g. $$\\begin{array}{|l|r|r|}\\hline \\text{Year} & \\text{Sales} & \\text{Profit} \\\\ \\hline 2021 & 120 & 18 \\\\ 2022 & 150 & 24 \\\\ \\hline\\end{array}$$
 - General knowledge / current affairs: use only stable, verifiable facts. Avoid anything that changes over time (office-holders, latest records, recent events after 2024) unless the question states the year it refers to.
 
@@ -166,7 +167,17 @@ Structures and diagrams (use only where the question genuinely needs a picture):
 - Otherwise diagram_kind "none", diagram_code "", options_format "text".
 ${avoid ? `Do not repeat or paraphrase these existing questions:\n${avoid}\n` : ''}`;
 
-    const raw = await callGemini(prompt, { schema: QUESTION_SCHEMA, temperature: 0.7 });
+    let raw;
+    try {
+      raw = await callGemini(prompt, { schema: QUESTION_SCHEMA, temperature: 0.7 });
+    } catch (e) {
+      // One blocked (e.g. RECITATION) or timed-out batch shouldn't lose the whole request; try another batch.
+      // Configuration errors (missing key, bad model) are not retried.
+      if (e.status !== 502) throw e;
+      lastError = e;
+      rejected.push(e.message);
+      continue;
+    }
     let arr;
     try { arr = JSON.parse(raw); } catch { rejected.push('invalid JSON from Gemini'); continue; }
     if (!Array.isArray(arr)) continue;
@@ -179,6 +190,7 @@ ${avoid ? `Do not repeat or paraphrase these existing questions:\n${avoid}\n` : 
       if (out.length >= count) break;
     }
   }
+  if (!out.length && lastError) throw lastError;
   if (rejected.length) console.warn(`Gemini: rejected ${rejected.length} item(s) for ${subject}:`, rejected.slice(0, 5).join(' | '));
   return { questions: out, rejected };
 }
