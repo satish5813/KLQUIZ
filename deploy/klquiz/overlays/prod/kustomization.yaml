@@ -9,7 +9,7 @@ resources:
   - backup.yaml
 images:
   - name: ghcr.io/satish5813/klquiz
-    newTag: "v1.0.0"
+    newTag: "v1.1.0"
 configMapGenerator:
   - name: klquiz-backup-scripts
     files:
