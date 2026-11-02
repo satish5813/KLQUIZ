@@ -29,7 +29,7 @@ router.get('/tests', (req, res) => {
     .filter((t) => testWindowState(t) !== 'ended')
     .map((t) => ({
       id: t.id, name: t.name, exam_code: t.exam_code, description: t.description, duration_min: t.duration_min,
-      start_at: t.start_at, end_at: t.end_at, state: testWindowState(t),
+      start_at: t.start_at, end_at: t.end_at, state: testWindowState(t), registration_mode: t.registration_mode,
       sections: sectionsWithPaper(t.id).map((s) => ({ name: s.name, question_count: s.question_count })),
     }));
   res.json(tests);
@@ -42,14 +42,25 @@ router.post('/register', registerLimiter, (req, res) => {
   const state = testWindowState(test);
   if (state !== 'open') fail(403, STATE_MSG[state]);
 
+  const fullName = v.str(b.full_name, 'Full name', { min: 3, max: 120 }).replace(/\s+/g, ' ');
+  if (!/^[\p{L} .'-]+$/u.test(fullName)) fail(400, 'Full name may contain only letters, spaces, dots and hyphens');
+
+  // Trial/practice sessions ask only for a name. Each registration is a new candidate; the session cookie lets
+  // them resume in the same browser. The placeholder email keeps the per-test uniqueness rule intact.
+  if (test.registration_mode === 'name_only') {
+    const r = run(`INSERT INTO students (test_id, full_name, address, email, mobile, parent_mobile, reg_ip) VALUES (?, ?, '', ?, '', '', ?)`,
+      test.id, fullName, `name-only:${crypto.randomBytes(8).toString('hex')}`, req.ip);
+    res.cookie('kl_reg', sign({ sid: Number(r.lastInsertRowid), tid: test.id, role: 'reg' }, 3600), cookieOpts(3600 * 1000));
+    return res.json({ ok: true, name: fullName, test: test.name, returning: false });
+  }
+
   const d = {
-    full_name: v.str(b.full_name, 'Full name', { min: 3, max: 120 }).replace(/\s+/g, ' '),
+    full_name: fullName,
     address: v.str(b.address, 'Address', { min: 5, max: 500 }),
     email: v.email(b.email),
     mobile: v.mobile(b.mobile, 'Mobile number'),
     parent_mobile: v.mobile(b.parent_mobile, 'Parent mobile number'),
   };
-  if (!/^[\p{L} .'-]+$/u.test(d.full_name)) fail(400, 'Full name may contain only letters, spaces, dots and hyphens');
   if (d.mobile === d.parent_mobile) fail(400, 'Parent mobile number must be different from your mobile number');
 
   let student = get('SELECT * FROM students WHERE test_id = ? AND email = ?', test.id, d.email);
@@ -108,7 +119,7 @@ router.get('/exam', (req, res) => {
   const test = get('SELECT * FROM tests WHERE id = ?', s.test_id);
   const a = autoFinalizeIfExpired(loadAttempt(s.id));
   res.json({
-    student: { full_name: s.full_name, email: s.email, mobile: s.mobile },
+    student: { full_name: s.full_name, email: s.email.startsWith('name-only:') ? '' : s.email, mobile: s.mobile },
     test: {
       name: test.name, exam_code: test.exam_code, description: test.description, duration_min: test.duration_min,
       marks_correct: test.marks_correct, marks_wrong: test.marks_wrong, max_violations: test.max_violations,
@@ -242,7 +253,7 @@ router.get('/result', (req, res) => {
   const test = get('SELECT * FROM tests WHERE id = ?', a.test_id);
   const s = req.student;
   const base = {
-    student: { full_name: s.full_name, email: s.email, mobile: s.mobile },
+    student: { full_name: s.full_name, email: s.email.startsWith('name-only:') ? '' : s.email, mobile: s.mobile },
     test: { name: test.name, exam_code: test.exam_code },
     submitted_at: a.submitted_at, submit_reason: a.submit_reason,
   };

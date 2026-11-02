@@ -246,6 +246,7 @@ router.put('/tests/:id', (req, res) => {
     mix_medium: v.int(b.mix_medium, 'Medium %', { min: 0, max: 100 }),
     mix_hard: v.int(b.mix_hard, 'Hard %', { min: 0, max: 100 }),
     selection_mode: b.selection_mode === 'fixed' ? 'fixed' : 'random',
+    registration_mode: b.registration_mode === 'name_only' ? 'name_only' : 'full',
     shuffle_questions: b.shuffle_questions ? 1 : 0,
     shuffle_options: b.shuffle_options ? 1 : 0,
     show_result: b.show_result ? 1 : 0,
@@ -598,6 +599,9 @@ router.get('/attempts/:id', (req, res) => {
   });
 });
 
+// Name-only (trial) registrations store a placeholder email; exports show it blank.
+const shownEmail = (e) => (String(e).startsWith('name-only:') ? '' : e);
+
 // CSV exports (Excel-friendly, with formula-injection protection).
 const csvCell = (val) => {
   let s = val === null || val === undefined ? '' : String(val);
@@ -616,7 +620,7 @@ router.get('/tests/:id/results.csv', (req, res) => {
   const secs = sectionsWithPaper(t.id);
   const rows = rankings(t.id).map((r) => {
     const ss = JSON.parse(r.section_scores || '[]');
-    return [r.rank, r.full_name, r.email, r.mobile, r.parent_mobile, r.address, r.score, r.correct, r.wrong, r.unanswered,
+    return [r.rank, r.full_name, shownEmail(r.email), r.mobile, r.parent_mobile, r.address, r.score, r.correct, r.wrong, r.unanswered,
       ...secs.map((s) => ss.find((x) => x.section_id === s.id)?.score ?? ''),
       Math.round(r.time_taken_sec / 60), r.violations, r.submit_reason, r.submitted_at];
   });
@@ -628,7 +632,7 @@ router.get('/tests/:id/results.csv', (req, res) => {
 router.get('/tests/:id/students.csv', (req, res) => {
   const t = loadTest(req.params.id);
   const rows = all(`SELECT s.*, a.status AS attempt_status FROM students s LEFT JOIN attempts a ON a.student_id = s.id WHERE s.test_id = ? ORDER BY s.id`, t.id)
-    .map((s) => [s.id, s.full_name, s.email, s.mobile, s.parent_mobile, s.address, s.attempt_status || 'not started', s.created_at]);
+    .map((s) => [s.id, s.full_name, shownEmail(s.email), s.mobile, s.parent_mobile, s.address, s.attempt_status || 'not started', s.created_at]);
   sendCsv(res, `${t.exam_code}_${t.name}_students.csv`, ['ID', 'Name', 'Email', 'Mobile', 'Parent Mobile', 'Address', 'Status', 'Registered At'], rows);
 });
 

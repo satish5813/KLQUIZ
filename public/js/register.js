@@ -35,7 +35,16 @@
     const waiting = t.state === 'not_started';
     $('#regBtn').disabled = waiting;
     $('#regBtn').textContent = waiting ? `Registration opens at ${fmtDate(t.start_at)}` : 'Submit & continue';
+    // Trial sessions ask only for a name.
+    const nameOnly = t.registration_mode === 'name_only';
+    ['address', 'email'].forEach((id) => $(`#${id}`).closest('.field').classList.toggle('hidden', nameOnly));
+    $('#mobile').closest('.grid-2').classList.toggle('hidden', nameOnly);
+    $('label[for=full_name]').textContent = nameOnly ? 'Your full name' : 'Full name (as in 10th certificate)';
+    $('#resumeHint').textContent = nameOnly
+      ? 'Got disconnected during the exam? Reopen this page in the same browser to continue.'
+      : 'Already registered and got disconnected? Enter the same email and mobile number to resume your exam.';
   }
+  const isNameOnly = () => (tests.find((x) => String(x.id) === $('#test').value) || {}).registration_mode === 'name_only';
   $('#test').addEventListener('change', showInfo);
   $('#refreshBtn').addEventListener('click', loadTests);
 
@@ -47,6 +56,7 @@
     if (!v('test')) return 'Select your examination';
     if (v('full_name').length < 3) return 'Enter your full name';
     if (!/^[\p{L} .'-]+$/u.test(v('full_name'))) return 'Full name may contain only letters, spaces, dots and hyphens';
+    if (isNameOnly()) return $('#agree').checked ? null : 'Please accept the declaration';
     if (v('address').length < 5) return 'Enter your address';
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(v('email'))) return 'Enter a valid email address';
     const m = /^(\+91)?[6-9]\d{9}$/;

@@ -41,6 +41,7 @@
     el('div', [el('h1', { text: title }), sub ? el('div.sub', { text: sub }) : null]),
     actions ? el('div.row', actions) : null,
   ]);
+  const isNameOnly = (e) => String(e || '').startsWith('name-only:');
   const badge = (status) => el(`span.badge.${status}`, { text: String(status).replace('_', ' ').toUpperCase() });
   const field = (label, input, hint) => el('div.field', [el('label', { text: label }), input, hint ? el('div.hint', { text: hint }) : null]);
 
@@ -322,6 +323,10 @@
       mix_easy: el('input', { type: 'number', value: t.mix_easy, min: 0, max: 100, disabled: t.locked }),
       mix_medium: el('input', { type: 'number', value: t.mix_medium, min: 0, max: 100, disabled: t.locked }),
       mix_hard: el('input', { type: 'number', value: t.mix_hard, min: 0, max: 100, disabled: t.locked }),
+      registration_mode: el('select', [
+        el('option', { value: 'full', text: 'Full details (name, address, email, mobiles)', selected: t.registration_mode !== 'name_only' }),
+        el('option', { value: 'name_only', text: 'Name only (trial / practice session)', selected: t.registration_mode === 'name_only' }),
+      ]),
       selection_mode: el('select', { disabled: t.locked }, [
         el('option', { value: 'random', text: 'Random set for every student (same difficulty mix)', selected: t.selection_mode === 'random' }),
         el('option', { value: 'fixed', text: 'Same question paper for all students (order shuffled)', selected: t.selection_mode === 'fixed' }),
@@ -375,7 +380,7 @@
       await api(`/api/admin/tests/${t.id}`, { method: 'PUT', body: {
         name: f.name.value, description: f.description.value, duration_min: Number(f.duration_min.value),
         marks_correct: Number(f.marks_correct.value), marks_wrong: Number(f.marks_wrong.value), max_violations: Number(f.max_violations.value),
-        mix_easy: Number(f.mix_easy.value), mix_medium: Number(f.mix_medium.value), mix_hard: Number(f.mix_hard.value), selection_mode: f.selection_mode.value,
+        mix_easy: Number(f.mix_easy.value), mix_medium: Number(f.mix_medium.value), mix_hard: Number(f.mix_hard.value), selection_mode: f.selection_mode.value, registration_mode: f.registration_mode.value,
         start_at: f.start_at.value ? new Date(f.start_at.value).toISOString() : null,
         end_at: f.end_at.value ? new Date(f.end_at.value).toISOString() : null,
         shuffle_questions: f.shuffle_questions.checked, shuffle_options: f.shuffle_options.checked, show_result: f.show_result.checked,
@@ -396,6 +401,7 @@
           field('Exam window opens', f.start_at, 'Leave empty to allow any time while live'),
           field('Exam window closes', f.end_at, 'Attempts are force-submitted at this time'),
         ]),
+        el('div.grid-2', [field('Registration form', f.registration_mode, 'Name only: candidates type just their name (then the pass key). Use for trials; real exams need full details.')]),
         el('div.row', [
           el('label.check', [f.shuffle_questions, 'Shuffle question order per student']),
           el('label.check', [f.shuffle_options, 'Shuffle options per student']),
@@ -732,7 +738,7 @@
       clear(tbody).append(...rows.filter((s) => !q || `${s.full_name} ${s.email} ${s.mobile}`.toLowerCase().includes(q)).map((s) => el('tr', [
         el('td', { text: s.id }),
         el('td', [el('b', { text: s.full_name }), el('div.small.muted', { text: s.address })]),
-        el('td', [el('div', { text: s.email }), el('div.small', { text: `📱 ${s.mobile} · Parent ${s.parent_mobile}` })]),
+        el('td', isNameOnly(s.email) ? el('span.muted', { text: 'name only (trial)' }) : [el('div', { text: s.email }), el('div.small', { text: `📱 ${s.mobile} · Parent ${s.parent_mobile}` })]),
         el('td', s.attempt_status ? badge(s.attempt_status) : el('span.badge', { text: 'NOT STARTED' })),
         el('td', { text: s.score ?? '—' }),
         el('td', { text: s.violations ?? '—' }),
@@ -785,7 +791,7 @@
           el('thead', el('tr', ['Rank', 'Candidate', 'Score', ...secNames, 'C / W / U', 'Time', 'Violations', 'Submitted', ''].map((h) => el('th', { text: h })))),
           el('tbody', rs.map((x) => el(`tr${x.rank === 1 ? '.rank-1' : ''}`, [
             el('td', { text: x.rank }),
-            el('td', [el('b', { text: x.full_name }), el('div.small.muted', { text: `${x.email} · ${x.mobile}` })]),
+            el('td', [el('b', { text: x.full_name }), el('div.small.muted', { text: isNameOnly(x.email) ? 'name only (trial)' : `${x.email} · ${x.mobile}` })]),
             el('td', el('b', { text: x.score })),
             ...secNames.map((n) => el('td', { text: x.sections.find((s) => s.name === n)?.score ?? '—' })),
             el('td.small', { text: `${x.correct} / ${x.wrong} / ${x.unanswered}` }),
@@ -811,7 +817,7 @@
           el('span.badge.red', { text: `${a.wrong} wrong` }), el('span.badge', { text: `${a.unanswered} unanswered` }),
           el('span.badge.pending', { text: `${a.violations} violations` }),
         ]),
-        el('p.small.muted', { text: `${d.student.email} · ${d.student.mobile} · Parent ${d.student.parent_mobile} · ${d.student.address}` }),
+        el('p.small.muted', { text: isNameOnly(d.student.email) ? 'Name-only (trial) registration' : `${d.student.email} · ${d.student.mobile} · Parent ${d.student.parent_mobile} · ${d.student.address}` }),
         a.violation_log.length ? el('details.mb', [el('summary', { text: 'Violation log' }), el('ul.small', a.violation_log.map((v) => el('li', { text: `${fmtDate(v.at)} — ${v.type}` })))]) : null,
         ...d.sections.map((s) => el('div', [
           el('h3.mt', { text: s.name }),

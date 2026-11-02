@@ -23,7 +23,7 @@
     clear($('#iTitle')).append(`${t.exam_code} · ${t.name}`, el('small', { text: t.description }));
     clear($('#iCand')).append(
       el('b', { text: info.student.full_name }), el('br'),
-      info.student.email, el('br'), `Mobile ${info.student.mobile}`,
+      info.student.email || null, info.student.email ? el('br') : null, info.student.mobile ? `Mobile ${info.student.mobile}` : null,
     );
     clear($('#iSecs')).append(
       ...t.sections.map((s) => el('tr', [el('td', { text: s.name }), el('td', { text: s.question_count })])),
@@ -88,9 +88,10 @@
     document.body.classList.add('exam');
     const t = S.info.test;
     clear($('#eTitle')).append(`${t.exam_code} · ${t.name}`, el('small', { text: `${S.sections.reduce((a, s) => a + s.questions.length, 0)} questions` }));
-    clear($('#eCand')).append(el('b', { text: S.info.student.full_name }), el('br'), S.info.student.email);
+    clear($('#eCand')).append(el('b', { text: S.info.student.full_name }), S.info.student.email ? el('br') : null, S.info.student.email || null);
     const wm = $('#wm');
-    for (let i = 0; i < 40; i++) wm.appendChild(el('span', { text: `${S.info.student.email} · ${S.info.student.mobile}` }));
+    const mark = [S.info.student.email, S.info.student.mobile].filter(Boolean).join(' · ') || S.info.student.full_name;
+    for (let i = 0; i < 40; i++) wm.appendChild(el('span', { text: mark }));
     S.started = true;
     buildTabs();
     show();

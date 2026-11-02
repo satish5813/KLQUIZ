@@ -147,6 +147,11 @@ if (!tCols.includes('mix_easy')) {
            ALTER TABLE tests ADD COLUMN selection_mode TEXT NOT NULL DEFAULT 'random';`);
 }
 
+// Registration form per test: 'full' (name, address, email, mobiles) or 'name_only' (trial/practice sessions).
+if (!db.prepare('PRAGMA table_info(tests)').all().some((c) => c.name === 'registration_mode')) {
+  db.exec("ALTER TABLE tests ADD COLUMN registration_mode TEXT NOT NULL DEFAULT 'full'");
+}
+
 // Questions served to each attempt (needed when every student gets a different random set).
 db.exec(`CREATE TABLE IF NOT EXISTS attempt_questions (
   attempt_id INTEGER NOT NULL REFERENCES attempts(id) ON DELETE CASCADE,
