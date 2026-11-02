@@ -1,21 +1,28 @@
 const express = require('express');
 const crypto = require('crypto');
 const bcrypt = require('bcryptjs');
-const rateLimit = require('express-rate-limit');
+const { rateLimit, ipKeyGenerator } = require('express-rate-limit');
 const { all, get, run, tx } = require('../db');
 const {
-  fail, cookieOpts, sign, requireRegistered, requireStudent, v,
+  fail, cookieOpts, sign, verify, requireRegistered, requireStudent, v,
 } = require('../security');
 const { testWindowState, sectionsWithPaper, createAttempt, finalize, rankings } = require('../exam');
 
 const router = express.Router();
 
-// Many candidates in one exam hall can share a single public IP, so limits are generous;
-// failed pass-key guesses are what we really throttle.
-const registerLimiter = rateLimit({ windowMs: 10 * 60000, limit: 300, standardHeaders: 'draft-7', legacyHeaders: false,
+// Thousands of candidates in one exam hall (or on one mobile network) can share a single public IP, so the
+// per-IP caps only stop floods. Wrong pass keys are throttled per registration: one candidate's typos never
+// lock out the rest of the hall, and guessing an 8-character key at 1,000 tries per 10 minutes is hopeless.
+const registerLimiter = rateLimit({ windowMs: 10 * 60000, limit: 3000, standardHeaders: 'draft-7', legacyHeaders: false,
   message: { error: 'Too many requests. Please wait a few minutes.' } });
-const passkeyLimiter = rateLimit({ windowMs: 10 * 60000, limit: 40, skipSuccessfulRequests: true, standardHeaders: 'draft-7', legacyHeaders: false,
+const passkeyLimiter = rateLimit({ windowMs: 10 * 60000, limit: 10, skipSuccessfulRequests: true, standardHeaders: 'draft-7', legacyHeaders: false,
+  keyGenerator: (req) => {
+    const reg = verify(req.cookies?.kl_reg);
+    return reg && reg.role === 'reg' ? `reg:${reg.sid}` : `ip:${ipKeyGenerator(req.ip)}`;
+  },
   message: { error: 'Too many wrong pass keys. Please wait 10 minutes or contact the invigilator.' } });
+const passkeyIpLimiter = rateLimit({ windowMs: 10 * 60000, limit: 1000, skipSuccessfulRequests: true, standardHeaders: 'draft-7', legacyHeaders: false,
+  message: { error: 'Too many wrong pass keys from this network. Please wait a few minutes.' } });
 
 const STATE_MSG = {
   not_live: 'This exam is not open right now.',
@@ -79,13 +86,29 @@ router.post('/register', registerLimiter, (req, res) => {
   res.json({ ok: true, name: student.full_name, test: test.name, returning });
 });
 
-router.post('/unlock', passkeyLimiter, requireRegistered, async (req, res) => {
+// bcrypt takes ~50 ms of the single JS thread; 5,000 candidates unlocking at the start would stall everyone for
+// minutes. Once a key has matched a test's hash, its keyed digest is remembered (in memory, tied to that hash, so a
+// changed pass key is checked afresh) and later correct entries are verified in microseconds. Wrong keys still
+// take the slow, rate-limited bcrypt path.
+const knownGoodKey = new Map(); // test id -> { hash, digest }
+const keyDigest = (k) => crypto.createHmac('sha256', process.env.APP_SECRET).update(k).digest();
+async function passkeyMatches(test, passkey) {
+  if (!test.passkey_hash) return false;
+  const known = knownGoodKey.get(test.id);
+  const d = keyDigest(passkey);
+  if (known && known.hash === test.passkey_hash && crypto.timingSafeEqual(known.digest, d)) return true;
+  if (!(await bcrypt.compare(passkey, test.passkey_hash))) return false;
+  knownGoodKey.set(test.id, { hash: test.passkey_hash, digest: d });
+  return true;
+}
+
+router.post('/unlock', passkeyIpLimiter, passkeyLimiter, requireRegistered, async (req, res) => {
   const passkey = v.str(req.body.passkey, 'Pass key', { max: 64 });
   const student = get('SELECT * FROM students WHERE id = ? AND test_id = ?', req.reg.sid, req.reg.tid) || fail(401, 'Registration not found');
   const test = get('SELECT * FROM tests WHERE id = ?', student.test_id);
   const state = testWindowState(test);
   if (state !== 'open') fail(403, STATE_MSG[state]);
-  if (!test.passkey_hash || !(await bcrypt.compare(passkey, test.passkey_hash))) fail(401, 'Incorrect pass key');
+  if (!(await passkeyMatches(test, passkey))) fail(401, 'Incorrect pass key');
 
   // New session id invalidates any other browser that was using this candidate's login.
   const sess = crypto.randomBytes(16).toString('hex');

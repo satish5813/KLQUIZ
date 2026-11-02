@@ -36,10 +36,10 @@ for (const k of ['JWT_SECRET', 'APP_SECRET']) {
 const express = require('express');
 const helmet = require('helmet');
 const cookieParser = require('cookie-parser');
-const rateLimit = require('express-rate-limit');
+const { rateLimit, ipKeyGenerator } = require('express-rate-limit');
 const { db, get } = require('./db');
 const { seed } = require('./seed');
-const { csrfGuard, HttpError } = require('./security');
+const { csrfGuard, HttpError, verify } = require('./security');
 
 seed();
 
@@ -82,10 +82,24 @@ app.use((req, res, next) => {
   next();
 });
 
-app.use('/api', rateLimit({ windowMs: 60000, limit: 3000, standardHeaders: 'draft-7', legacyHeaders: false }));
+// A whole exam hall, hostel or mobile network can reach us from one public IP, so API traffic is counted per
+// signed-in candidate/admin (600 requests a minute each, far above normal use) and only anonymous traffic per IP.
+app.use(cookieParser());
+const sessionKey = (req) => {
+  const stu = verify(req.cookies?.kl_stu);
+  if (stu && stu.role === 'student') return `stu:${stu.sid}`;
+  const adm = verify(req.cookies?.kl_admin);
+  if (adm && adm.role === 'admin') return `adm:${adm.sub}`;
+  return null;
+};
+app.use('/api', rateLimit({
+  windowMs: 60000, standardHeaders: 'draft-7', legacyHeaders: false,
+  keyGenerator: (req) => sessionKey(req) || `ip:${ipKeyGenerator(req.ip)}`,
+  limit: (req) => (sessionKey(req) ? 600 : 6000),
+  message: { error: 'Too many requests. Please wait a moment.' },
+}));
 app.use('/api', (req, res, next) => { res.setHeader('Cache-Control', 'no-store'); next(); });
 app.use(express.json({ limit: '5mb' }));
-app.use(cookieParser());
 app.use('/api', csrfGuard);
 
 // For uptime monitors / Cloudflare health checks. Reveals nothing beyond "up and the database answers".
