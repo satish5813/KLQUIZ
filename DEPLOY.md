@@ -11,7 +11,7 @@ published at **https://exam.klfacultyhiring.com** through the existing `klu-clus
 | Kubernetes | `deploy/klquiz/base` (app, 5 GiB SQLite volume, ingress, network policies), `overlays/staging`, `overlays/prod` |
 | Flux | `deploy/clusters/klu/klquiz-*.yaml` (applied once by hand) |
 | Tunnel route | `aihr_pilot/deploy/platform/cloudflared.yaml` (hostname `exam.klfacultyhiring.com` → Traefik) |
-| Secrets (on the cluster only) | `klquiz-env` (JWT_SECRET, APP_SECRET, ADMIN_USER, ADMIN_PASSWORD, GEMINI_API_KEY, GEMINI_MODEL), `klquiz-backup-key`, `ghcr-pull` |
+| Secrets (on the cluster only) | `klquiz-env` (JWT_SECRET, APP_SECRET, ADMIN_USER, ADMIN_PASSWORD, GEMINI_API_KEY, GEMINI_MODEL), `klquiz-backup-key` (the image is public; no pull secret) |
 | Backups | nightly 03:35 IST, encrypted, `master:/home/test/kl-backups/klquiz-prod`; restore test first Sunday 05:25 |
 
 **Release flow:** push to `main` → CI tests, builds, smoke-tests, scans, pushes the image → staging updates automatically

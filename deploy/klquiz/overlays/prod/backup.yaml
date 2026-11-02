@@ -23,7 +23,6 @@ spec:
         spec:
           restartPolicy: Never
           nodeSelector: {klu/role: apps}
-          imagePullSecrets: [{name: ghcr-pull}]
           securityContext:
             runAsNonRoot: true
             runAsUser: 1000
@@ -81,7 +80,6 @@ spec:
           labels: {app: klquiz-restore-test}
         spec:
           restartPolicy: Never
-          imagePullSecrets: [{name: ghcr-pull}]
           securityContext:
             runAsNonRoot: true
             runAsUser: 1000

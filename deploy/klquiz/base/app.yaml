@@ -1,4 +1,5 @@
 # Exam portal: one Node.js pod with its SQLite database on a volume on the apps node.
+# The image is public (public repository), so no pull secret is needed.
 # Settings and secrets: Secret "klquiz-env" (never committed): JWT_SECRET, APP_SECRET, ADMIN_USER,
 # ADMIN_PASSWORD, GEMINI_API_KEY, GEMINI_MODEL.
 # SQLite has a single writer, so there is exactly one replica and updates use Recreate (a few seconds of downtime):
@@ -27,7 +28,6 @@ spec:
       labels: {app: klquiz}
     spec:
       nodeSelector: {klu/role: apps}
-      imagePullSecrets: [{name: ghcr-pull}]
       terminationGracePeriodSeconds: 20
       securityContext:
         runAsNonRoot: true
