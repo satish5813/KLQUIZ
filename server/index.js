@@ -104,10 +104,47 @@ app.use('/api', (req, res) => res.status(404).json({ error: 'Not found' }));
 
 // Third-party renderers are served from our own origin so the strict CSP needs no CDN.
 const NM = path.join(__dirname, '..', 'node_modules');
-app.use('/vendor/katex', express.static(path.join(NM, 'katex', 'dist'), { maxAge: '7d' }));
-app.use('/vendor/smiles-drawer', express.static(path.join(NM, 'smiles-drawer', 'dist'), { maxAge: '7d' }));
-app.use('/vendor/dompurify', express.static(path.join(NM, 'dompurify', 'dist'), { maxAge: '7d' }));
-app.use(express.static(path.join(__dirname, '..', 'public'), { extensions: ['html'], index: 'index.html' }));
+const PUBLIC = path.join(__dirname, '..', 'public');
+const VENDOR = {
+  '/vendor/katex/': path.join(NM, 'katex', 'dist'),
+  '/vendor/smiles-drawer/': path.join(NM, 'smiles-drawer', 'dist'),
+  '/vendor/dompurify/': path.join(NM, 'dompurify', 'dist'),
+};
+
+// Cache busting: pages are served with every local script/stylesheet URL stamped with a hash of the file
+// (register.js?v=3fa2…). A proxy or browser may keep JS/CSS for hours (Cloudflare's Browser Cache TTL overrides
+// max-age=0), so after a release a changed file must get a new URL; pages themselves are never cached.
+const assetFile = (url) => {
+  const prefix = Object.keys(VENDOR).find((p) => url.startsWith(p));
+  return prefix ? path.join(VENDOR[prefix], url.slice(prefix.length)) : path.join(PUBLIC, url);
+};
+const stampedPages = new Map();
+for (const page of ['index.html', 'exam.html', 'result.html', 'admin/index.html', 'admin/login.html']) {
+  const html = fs.readFileSync(path.join(PUBLIC, page), 'utf8').replace(/(src|href)="(\/[^"?#]+\.(?:js|css))"/g, (m, attr, url) => {
+    const file = assetFile(url);
+    if (!fs.existsSync(file)) return m;
+    const v = crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex').slice(0, 10);
+    return `${attr}="${url}?v=${v}"`;
+  });
+  stampedPages.set(page, html);
+}
+const pageFor = (p) => {
+  const rel = p.replace(/^\/+/, '');
+  if (rel === '') return 'index.html';
+  if (stampedPages.has(rel)) return rel;
+  if (stampedPages.has(`${rel}.html`)) return `${rel}.html`;
+  if (stampedPages.has(`${rel.replace(/\/$/, '')}/index.html`)) return `${rel.replace(/\/$/, '')}/index.html`;
+  return null;
+};
+app.get(/.*/, (req, res, next) => {
+  const page = pageFor(req.path);
+  if (!page) return next();
+  if (page === 'admin/index.html' && !req.path.endsWith('/') && !req.path.endsWith('.html')) return res.redirect(301, '/admin/');
+  res.set('Cache-Control', 'no-cache').type('html').send(stampedPages.get(page));
+});
+
+for (const [prefix, dir] of Object.entries(VENDOR)) app.use(prefix.slice(0, -1), express.static(dir, { maxAge: '7d' }));
+app.use(express.static(PUBLIC, { extensions: ['html'], index: 'index.html' }));
 
 // eslint-disable-next-line no-unused-vars
 app.use((err, req, res, next) => {
