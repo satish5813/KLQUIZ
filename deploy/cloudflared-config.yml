@@ -1,0 +1,12 @@
+# Cloudflare Tunnel: publishes the portal through Cloudflare without opening any inbound port.
+# Copy to /etc/cloudflared/config.yml and replace <TUNNEL-ID> and the hostname (see DEPLOY.md).
+tunnel: <TUNNEL-ID>
+credentials-file: /etc/cloudflared/<TUNNEL-ID>.json
+
+ingress:
+  - hostname: exam.your-domain.in
+    service: http://127.0.0.1:3000
+    originRequest:
+      connectTimeout: 10s
+  # Anything else is refused.
+  - service: http_status:404

@@ -74,5 +74,8 @@ server-side timer and autosave → submit summary → result with section-wise s
 
 ## Production
 
-Serve over HTTPS behind a reverse proxy and set in `.env`:
-`SECURE_COOKIES=true`, `TRUST_PROXY=1`, `NODE_ENV=production`. Back up `data/` regularly.
+See **[DEPLOY.md](DEPLOY.md)**: running on a Linux or Windows server as a service, publishing through
+Cloudflare Tunnel (no open ports), Cloudflare Access for the admin portal, required Cloudflare settings,
+nightly full backups (`scripts/backup-full.js`) and an exam-day checklist.
+In short, set in `.env`: `NODE_ENV=production`, `SECURE_COOKIES=true`, `TRUST_PROXY=1`, `HOST=127.0.0.1`.
+Health check: `GET /api/health`.

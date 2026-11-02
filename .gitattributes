@@ -1,0 +1,8 @@
+* text=auto
+# Server config files must keep Unix line endings (systemd rejects CRLF).
+*.service text eol=lf
+*.yml text eol=lf
+*.sh text eol=lf
+# Binary data
+*.db binary
+*.webp binary

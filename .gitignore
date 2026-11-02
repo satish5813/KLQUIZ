@@ -12,3 +12,5 @@ data/
 # Published database snapshot (no admin hashes, pass keys or student data)
 !backups/
 !backups/klquiz-backup.db
+# Full backups contain student data: never commit
+backups/full/

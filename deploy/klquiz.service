@@ -1,0 +1,36 @@
+# systemd unit for the KL Entrance Exam portal (Ubuntu / Debian / RHEL on the Intel server).
+# Install:  sudo cp deploy/klquiz.service /etc/systemd/system/ && sudo systemctl daemon-reload
+#           sudo systemctl enable --now klquiz
+[Unit]
+Description=KL University Entrance Examination Portal
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=klquiz
+Group=klquiz
+WorkingDirectory=/opt/klquiz
+ExecStart=/usr/bin/node server/index.js
+Environment=NODE_ENV=production
+Restart=always
+RestartSec=3
+# Lets in-flight requests finish and the database close cleanly on stop/restart.
+KillSignal=SIGTERM
+TimeoutStopSec=15
+
+# Hardening: the app may write only to its database and backup folders.
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+ReadWritePaths=/opt/klquiz/data /var/backups/klquiz
+
+[Install]
+WantedBy=multi-user.target
