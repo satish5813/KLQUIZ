@@ -9,7 +9,7 @@ resources:
   - ../../base
 images:
   - name: ghcr.io/satish5813/klquiz
-    newTag: "ec77b6ff0985"
+    newTag: "dbfc4166e7a9"
 patches:
   - target: {kind: Ingress, name: klquiz}
     patch: |
