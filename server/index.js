@@ -86,11 +86,11 @@ app.use((req, res, next) => {
 // signed-in candidate/admin (600 requests a minute each, far above normal use) and only anonymous traffic per IP.
 app.use(cookieParser());
 const sessionKey = (req) => {
+  if (req.klLimitKey !== undefined) return req.klLimitKey;
   const stu = verify(req.cookies?.kl_stu);
-  if (stu && stu.role === 'student') return `stu:${stu.sid}`;
-  const adm = verify(req.cookies?.kl_admin);
-  if (adm && adm.role === 'admin') return `adm:${adm.sub}`;
-  return null;
+  const adm = stu && stu.role === 'student' ? null : verify(req.cookies?.kl_admin);
+  req.klLimitKey = stu && stu.role === 'student' ? `stu:${stu.sid}` : adm && adm.role === 'admin' ? `adm:${adm.sub}` : null;
+  return req.klLimitKey;
 };
 app.use('/api', rateLimit({
   windowMs: 60000, standardHeaders: 'draft-7', legacyHeaders: false,

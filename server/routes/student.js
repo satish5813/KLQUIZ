@@ -6,7 +6,7 @@ const { all, get, run, tx } = require('../db');
 const {
   fail, cookieOpts, sign, verify, requireRegistered, requireStudent, v,
 } = require('../security');
-const { testWindowState, sectionsWithPaper, createAttempt, finalize, rankings } = require('../exam');
+const { testWindowState, sectionsWithPaper, createAttempt, finalize, rankOf } = require('../exam');
 
 const router = express.Router();
 
@@ -281,8 +281,7 @@ router.get('/result', (req, res) => {
     submitted_at: a.submitted_at, submit_reason: a.submit_reason,
   };
   if (!test.show_result) return res.json({ ...base, published: false });
-  const ranks = rankings(test.id);
-  const me = ranks.find((r) => r.id === a.id);
+  const me = rankOf(test.id, a.id);
   const max = sectionsWithPaper(test.id).reduce((m, x) => m + x.question_count, 0) * test.marks_correct;
   res.json({
     ...base,
@@ -290,8 +289,7 @@ router.get('/result', (req, res) => {
     score: a.score, max_score: max, correct: a.correct, wrong: a.wrong, unanswered: a.unanswered,
     sections: JSON.parse(a.section_scores || '[]'),
     marks_correct: test.marks_correct, marks_wrong: test.marks_wrong,
-    rank: me ? me.rank : null, candidates: ranks.length,
-    time_taken_sec: me ? me.time_taken_sec : null,
+    rank: me.rank, candidates: me.candidates, time_taken_sec: me.time_taken_sec,
   });
 });
 

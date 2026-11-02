@@ -7,7 +7,10 @@ const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, '..', 'data');
 fs.mkdirSync(DATA_DIR, { recursive: true });
 
 const db = new DatabaseSync(path.join(DATA_DIR, 'klquiz.db'));
-db.exec('PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000;');
+// synchronous=NORMAL is the recommended setting with WAL: commits no longer wait for a disk flush (every answer
+// save used to block the single JS thread on fsync). The database cannot be corrupted; only an OS crash or power
+// cut could lose the last moments of saves, which the exam page retries anyway.
+db.exec('PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL; PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000;');
 
 db.exec(`
 CREATE TABLE IF NOT EXISTS admins (
