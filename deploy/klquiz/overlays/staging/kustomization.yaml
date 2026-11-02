@@ -1,0 +1,18 @@
+# Staging: every green build lands here automatically (the CI job rewrites the newTag line).
+# Private: the hostname is not routed through the Cloudflare tunnel. Test with:
+#   kubectl -n klquiz-staging port-forward deploy/app 8080:8080   then open http://localhost:8080
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: klquiz-staging
+resources:
+  - namespace.yaml
+  - ../../base
+images:
+  - name: ghcr.io/satish5813/klquiz
+    newTag: "latest"
+patches:
+  - target: {kind: Ingress, name: klquiz}
+    patch: |
+      - op: replace
+        path: /spec/rules/0/host
+        value: staging-exam.klfacultyhiring.com

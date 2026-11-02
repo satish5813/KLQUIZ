@@ -1,0 +1,60 @@
+name: K8s - release to production
+
+# Production changes only when a version tag is pushed:   git tag v1.0.0 <code commit> && git push origin v1.0.0
+# Tag a code commit (not a "deploy(...) [skip ci]" commit: GitHub skips tag runs on those). The image CI already built
+# and ran on staging is re-tagged (no rebuild) and deploy/klquiz/overlays/prod is updated; Flux rolls it out.
+# The portal runs one replica with SQLite, so a release restarts it (a few seconds): never release during a live exam.
+on:
+  push:
+    tags: ['v*.*.*']
+
+concurrency:
+  group: k8s-release
+  cancel-in-progress: false
+
+env:
+  IMAGE: ghcr.io/${{ github.repository_owner }}/klquiz
+  DEPLOY_BRANCH: main
+
+jobs:
+  promote:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.DEPLOY_BRANCH }}
+          fetch-depth: 0
+      - name: Check the tag is on the deploy branch
+        run: |
+          SHA=$(git rev-list -n1 "$GITHUB_REF_NAME")
+          git merge-base --is-ancestor "$SHA" "origin/$DEPLOY_BRANCH" \
+            || { echo "::error::$GITHUB_REF_NAME ($SHA) is not on $DEPLOY_BRANCH"; exit 1; }
+          echo "SHA=$SHA" >> "$GITHUB_ENV"
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/setup-buildx-action@v3
+      - name: Re-tag the tested image (no rebuild)
+        # the newest ancestor whose image exists, provided nothing outside deploy/, backups/ and .github/ changed since it
+        run: |
+          SRC=""
+          for c in $(git rev-list --first-parent -n 30 "$SHA"); do
+            git diff --quiet "$c" "$SHA" -- . ':(exclude)deploy' ':(exclude).github' ':(exclude)backups' ':(exclude)*.md' || break
+            if docker buildx imagetools inspect "$IMAGE:${c::12}" >/dev/null 2>&1; then SRC="${c::12}"; break; fi
+          done
+          [ -n "$SRC" ] || { echo "::error::No tested CI image for $GITHUB_REF_NAME - push the commit and wait for the green CI run first"; exit 1; }
+          docker buildx imagetools create -t "$IMAGE:$GITHUB_REF_NAME" "$IMAGE:$SRC"
+          echo "SRC=$SRC" >> "$GITHUB_ENV"
+      - name: Point production at the release (Flux applies it)
+        run: |
+          f=deploy/klquiz/overlays/prod/kustomization.yaml
+          sed -i "s|^    newTag: .*|    newTag: \"$GITHUB_REF_NAME\"|" "$f" && git add "$f"
+          git config user.name "klquiz-release"
+          git config user.email "klquiz-release@users.noreply.github.com"
+          git commit -m "release(klquiz-prod): $GITHUB_REF_NAME = $SRC [skip ci]" || exit 0
+          git push origin "HEAD:$DEPLOY_BRANCH"

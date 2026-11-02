@@ -1,5 +1,39 @@
 # Deploying on the Intel server with Cloudflare
 
+## On the KL University K3s platform (how it runs today)
+
+The portal runs on the K3s cluster (master 10.5.1.5, apps node 10.5.1.6, db node 10.5.1.7) like the other KL apps,
+published at **https://exam.klfacultyhiring.com** through the existing `klu-cluster` Cloudflare Tunnel.
+
+| Piece | Where |
+|---|---|
+| Container image | `deploy/docker/app.Dockerfile` → `ghcr.io/satish5813/klquiz` (built by `.github/workflows/k8s.yml`) |
+| Kubernetes | `deploy/klquiz/base` (app, 5 GiB SQLite volume, ingress, network policies), `overlays/staging`, `overlays/prod` |
+| Flux | `deploy/clusters/klu/klquiz-*.yaml` (applied once by hand) |
+| Tunnel route | `aihr_pilot/deploy/platform/cloudflared.yaml` (hostname `exam.klfacultyhiring.com` → Traefik) |
+| Secrets (on the cluster only) | `klquiz-env` (JWT_SECRET, APP_SECRET, ADMIN_USER, ADMIN_PASSWORD, GEMINI_API_KEY, GEMINI_MODEL), `klquiz-backup-key`, `ghcr-pull` |
+| Backups | nightly 03:35 IST, encrypted, `master:/home/test/kl-backups/klquiz-prod`; restore test first Sunday 05:25 |
+
+**Release flow:** push to `main` → CI tests, builds, smoke-tests, scans, pushes the image → staging updates automatically
+(private: `kubectl -n klquiz-staging port-forward deploy/app 8080:8080`). To release to production:
+
+```bash
+git tag v1.0.1 && git push origin v1.0.1     # re-tags the tested image; Flux rolls production
+```
+
+SQLite runs as a single replica, so a release restarts the portal for a few seconds — **never release during a live exam**.
+Everyday commands (on the master, `ssh -p 985 test@10.5.1.5`, then `export KUBECONFIG=~/.kube/config`):
+
+```bash
+kubectl -n klquiz-prod get pods
+kubectl -n klquiz-prod logs deploy/app
+kubectl -n klquiz-prod create job --from=cronjob/klquiz-backup klquiz-backup-now   # backup on demand
+```
+
+The rest of this guide covers running it **outside** the cluster (a single server with systemd).
+
+---
+
 ```
 Students / admins ──HTTPS──▶ Cloudflare (DNS, TLS, WAF, Access) ──Tunnel──▶ Intel server: Node.js app :3000 ──▶ SQLite (data/klquiz.db)
 ```

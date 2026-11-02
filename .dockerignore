@@ -1,0 +1,16 @@
+# Never put secrets or data into the image.
+.env
+.env.*
+data/
+backups/
+*.db
+*.db-wal
+*.db-shm
+*.zip
+node_modules/
+.git/
+.github/
+.claude/
+deploy/klquiz/
+deploy/clusters/
+*.log

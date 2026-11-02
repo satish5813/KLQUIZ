@@ -1,0 +1,15 @@
+# Flux: keep klquiz-prod equal to deploy/klquiz/overlays/prod (changes only via release tags).
+# prune stays false for production: removing something from git never deletes it from the cluster automatically.
+# Applied once by hand (kubectl apply -f), after the first release tag has set a real image tag.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: klquiz-prod
+  namespace: flux-system
+spec:
+  sourceRef: {kind: GitRepository, name: klquiz}
+  path: ./deploy/klquiz/overlays/prod
+  interval: 5m
+  prune: false
+  wait: false
+  timeout: 10m

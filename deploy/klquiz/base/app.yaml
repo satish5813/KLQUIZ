@@ -1,0 +1,96 @@
+# Exam portal: one Node.js pod with its SQLite database on a volume on the apps node.
+# Settings and secrets: Secret "klquiz-env" (never committed): JWT_SECRET, APP_SECRET, ADMIN_USER,
+# ADMIN_PASSWORD, GEMINI_API_KEY, GEMINI_MODEL.
+# SQLite has a single writer, so there is exactly one replica and updates use Recreate (a few seconds of downtime):
+# never release during a live exam.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: klquiz-data
+  annotations:
+    kustomize.toolkit.fluxcd.io/prune: disabled
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: local-path
+  resources: {requests: {storage: 5Gi}}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: app
+spec:
+  replicas: 1
+  strategy: {type: Recreate}
+  selector: {matchLabels: {app: klquiz}}
+  template:
+    metadata:
+      labels: {app: klquiz}
+    spec:
+      nodeSelector: {klu/role: apps}
+      imagePullSecrets: [{name: ghcr-pull}]
+      terminationGracePeriodSeconds: 20
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: app
+          image: ghcr.io/satish5813/klquiz:latest
+          envFrom: [{secretRef: {name: klquiz-env}}]
+          env:
+            - {name: PORT, value: "8080"}
+            - {name: HOST, value: "0.0.0.0"}
+            - {name: DATA_DIR, value: /data}
+            - {name: NODE_ENV, value: production}
+            - {name: SECURE_COOKIES, value: "true"}
+            - {name: TRUST_PROXY, value: "1"}
+            # Visitors arrive via Cloudflare -> cloudflared -> Traefik; the real address is in CF-Connecting-IP.
+            - {name: CLIENT_IP_HEADER, value: cf-connecting-ip}
+            - {name: TMPDIR, value: /tmp}
+          ports: [{name: http, containerPort: 8080}]
+          readinessProbe:
+            httpGet: {path: /api/health, port: http}
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: {path: /api/health, port: http}
+            initialDelaySeconds: 30
+            periodSeconds: 20
+            failureThreshold: 5
+          resources:
+            requests: {cpu: 50m, memory: 128Mi}
+            limits: {cpu: "2", memory: 768Mi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          volumeMounts:
+            - {name: data, mountPath: /data}
+            - {name: tmp, mountPath: /tmp}
+      volumes:
+        - name: data
+          persistentVolumeClaim: {claimName: klquiz-data}
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: app
+spec:
+  selector: {app: klquiz}
+  ports: [{name: http, port: 80, targetPort: http}]
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: klquiz
+spec:
+  rules:
+    - host: HOSTNAME_SET_BY_OVERLAY
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend: {service: {name: app, port: {name: http}}}

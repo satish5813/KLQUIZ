@@ -1,0 +1,24 @@
+# Production (exam.klfacultyhiring.com). Only a release tag changes the image tag: the k8s-release workflow
+# re-tags the image staging already ran (no rebuild) and commits it here; Flux applies it.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: klquiz-prod
+resources:
+  - namespace.yaml
+  - ../../base
+  - backup.yaml
+images:
+  - name: ghcr.io/satish5813/klquiz
+    newTag: "latest"
+configMapGenerator:
+  - name: klquiz-backup-scripts
+    files:
+      - backup.sh
+      - backup-encrypt.js
+      - restore-test.sh
+patches:
+  - target: {kind: Ingress, name: klquiz}
+    patch: |
+      - op: replace
+        path: /spec/rules/0/host
+        value: exam.klfacultyhiring.com

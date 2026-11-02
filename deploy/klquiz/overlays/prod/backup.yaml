@@ -1,0 +1,137 @@
+# Nightly encrypted backup of the production database and a monthly restore test.
+# Files go to the master's data disk over NFS (172.16.0.1:/home/test/kl-backups/klquiz-prod), not the apps node, and the
+# PC pulls them nightly (aihr_pilot ops/pull-server-backup.ps1). Format: "KLB1" AES-256-GCM around a SQLite file:
+#   node backup-encrypt.js decrypt klquiz-prod_<date>.db.enc klquiz.db   (key: Secret klquiz-backup-key)
+# Both jobs mount the app's volume, so they run on the apps node next to it (local-path volume).
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: klquiz-backup
+spec:
+  schedule: "35 3 * * *"
+  timeZone: Asia/Kolkata
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      activeDeadlineSeconds: 1800
+      template:
+        metadata:
+          labels: {app: klquiz-backup}
+        spec:
+          restartPolicy: Never
+          nodeSelector: {klu/role: apps}
+          imagePullSecrets: [{name: ghcr-pull}]
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            fsGroup: 1000
+            seccompProfile: {type: RuntimeDefault}
+          containers:
+            - name: backup
+              image: ghcr.io/satish5813/klquiz:latest
+              command: [sh, /scripts/backup.sh]
+              env:
+                - {name: DATA_DIR, value: /data}
+                - {name: TMPDIR, value: /work}
+                - {name: KL_BACKUP_KEY_FILE, value: /key/backup.key}
+                - {name: KEEP_DAYS, value: "14"}
+              securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}
+              resources:
+                requests: {cpu: 50m, memory: 128Mi}
+                limits: {cpu: "1", memory: 512Mi}
+              volumeMounts:
+                - {name: scripts, mountPath: /scripts}
+                - {name: data, mountPath: /data}
+                - {name: work, mountPath: /work}
+                - {name: key, mountPath: /key, readOnly: true}
+                - {name: backups, mountPath: /backups}
+          volumes:
+            - name: scripts
+              configMap: {name: klquiz-backup-scripts}
+            - name: data
+              persistentVolumeClaim: {claimName: klquiz-data}
+            - name: work
+              emptyDir: {}
+            - name: key
+              secret: {secretName: klquiz-backup-key}
+            - name: backups
+              nfs: {server: 172.16.0.1, path: /home/test/kl-backups/klquiz-prod}
+---
+# First Sunday of the month: decrypt the newest backup and check SQLite opens it with an intact structure.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: klquiz-restore-test
+spec:
+  schedule: "25 5 1-7 * 0"
+  timeZone: Asia/Kolkata
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 2
+  failedJobsHistoryLimit: 2
+  jobTemplate:
+    spec:
+      backoffLimit: 0
+      activeDeadlineSeconds: 1800
+      template:
+        metadata:
+          labels: {app: klquiz-restore-test}
+        spec:
+          restartPolicy: Never
+          imagePullSecrets: [{name: ghcr-pull}]
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            seccompProfile: {type: RuntimeDefault}
+          containers:
+            - name: restore-test
+              image: ghcr.io/satish5813/klquiz:latest
+              command: [sh, /scripts/restore-test.sh]
+              env:
+                - {name: TMPDIR, value: /work}
+                - {name: KL_BACKUP_KEY_FILE, value: /key/backup.key}
+              securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}
+              resources:
+                requests: {cpu: 50m, memory: 128Mi}
+                limits: {cpu: "1", memory: 512Mi}
+              volumeMounts:
+                - {name: scripts, mountPath: /scripts}
+                - {name: work, mountPath: /work}
+                - {name: key, mountPath: /key, readOnly: true}
+                - {name: backups, mountPath: /backups, readOnly: true}
+                - {name: results, mountPath: /results}
+          volumes:
+            - name: scripts
+              configMap: {name: klquiz-backup-scripts}
+            - name: work
+              emptyDir: {}
+            - name: key
+              secret: {secretName: klquiz-backup-key}
+            - name: backups
+              nfs: {server: 172.16.0.1, path: /home/test/kl-backups/klquiz-prod, readOnly: true}
+            - name: results
+              nfs: {server: 172.16.0.1, path: /home/test/kl-backups/restore-tests}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: klquiz-backup
+spec:
+  podSelector: {matchLabels: {app: klquiz-backup}}
+  policyTypes: [Ingress, Egress]
+  ingress: []
+  egress: []
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: klquiz-restore-test
+spec:
+  podSelector: {matchLabels: {app: klquiz-restore-test}}
+  policyTypes: [Ingress, Egress]
+  ingress: []
+  egress: []

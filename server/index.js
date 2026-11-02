@@ -2,9 +2,10 @@ const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
 
-// Create .env with strong random secrets on first run.
+// Create .env with strong random secrets on first run — unless the secrets already come from the
+// environment (containers/Kubernetes Secrets), where the file system is read-only.
 const ENV_PATH = path.join(__dirname, '..', '.env');
-if (!fs.existsSync(ENV_PATH)) {
+if (!fs.existsSync(ENV_PATH) && !(process.env.JWT_SECRET && process.env.APP_SECRET)) {
   const rnd = (n) => crypto.randomBytes(n).toString('base64url');
   fs.writeFileSync(ENV_PATH, [
     'PORT=3000',
@@ -45,6 +46,18 @@ seed();
 const app = express();
 app.disable('x-powered-by');
 app.set('trust proxy', Number(process.env.TRUST_PROXY) || 0);
+
+// Behind Cloudflare plus another proxy (e.g. Traefik in Kubernetes), X-Forwarded-For only shows the last hop.
+// Cloudflare's edge puts the visitor's real address in CF-Connecting-IP; with CLIENT_IP_HEADER=cf-connecting-ip
+// it is used as req.ip, so rate limits and logs work per candidate. Only enable where all traffic comes via Cloudflare.
+const CLIENT_IP_HEADER = (process.env.CLIENT_IP_HEADER || '').toLowerCase();
+if (CLIENT_IP_HEADER) {
+  app.use((req, res, next) => {
+    const ip = (req.get(CLIENT_IP_HEADER) || '').trim();
+    if (/^[0-9a-f:.]{3,45}$/i.test(ip)) Object.defineProperty(req, 'ip', { value: ip, configurable: true });
+    next();
+  });
+}
 
 app.use(helmet({
   contentSecurityPolicy: {

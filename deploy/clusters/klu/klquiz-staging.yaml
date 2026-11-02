@@ -1,0 +1,27 @@
+# Flux: keep klquiz-staging equal to deploy/klquiz/overlays/staging of this repository.
+# Applied once by hand (kubectl apply -f). The repository is public, so no read token is needed.
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: GitRepository
+metadata:
+  name: klquiz
+  namespace: flux-system
+spec:
+  url: https://github.com/satish5813/KLQUIZ
+  ref: {branch: main}
+  interval: 1m
+  ignore: |
+    /*
+    !/deploy/klquiz/
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: klquiz-staging
+  namespace: flux-system
+spec:
+  sourceRef: {kind: GitRepository, name: klquiz}
+  path: ./deploy/klquiz/overlays/staging
+  interval: 5m
+  prune: true
+  wait: false
+  timeout: 10m
