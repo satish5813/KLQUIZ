@@ -295,7 +295,13 @@
       : `Violations recorded: ${S.violations}`;
   }
 
-  // Blocking warning screen; the student must return to full screen to continue.
+  // One trip away from the exam is one incident: leaving the app on a phone fires visibilitychange, blur and
+  // fullscreenchange (often the last one only when the student comes back, seconds later). While the warning
+  // screen is up, and for a short grace after the student returns, further events are not counted again.
+  let incidentOpen = false;
+  let graceUntil = 0;
+
+  // Blocking warning screen; the student must tap the button to return to the exam.
   function showGuard(title, text) {
     const o = $('#fsOverlay');
     clear(o.querySelector('.box')).append(
@@ -303,7 +309,10 @@
       el('p', { text }),
       el('button.btn.lg', { type: 'button', text: 'Return to full screen & continue', onclick: async () => {
         await enterFullscreen();
-        if (document.fullscreenElement || !document.documentElement.requestFullscreen) o.classList.add('hidden');
+        // Phones that refuse full screen must not leave the student stuck behind this screen.
+        o.classList.add('hidden');
+        incidentOpen = false;
+        graceUntil = Date.now() + 3000;
       } }),
     );
     o.classList.remove('hidden');
@@ -311,6 +320,9 @@
 
   async function violation(type, msg) {
     if (!S.started || S.done || S.submitting) return;
+    if (incidentOpen || Date.now() < graceUntil) return;
+    incidentOpen = true;
+    showGuard('You left the exam screen', 'Recording…');
     try {
       const r = await api('/api/student/violation', { method: 'POST', body: { type } });
       S.violations = r.violations;
@@ -324,6 +336,7 @@
       } else showGuard('Violation recorded', `${msg} This has been recorded and will be reported to the examiner.`);
     } catch (e) {
       if (e.status === 410) location.replace('/result.html');
+      else showGuard('You left the exam screen', `${msg} Return to the exam now.`);
     }
   }
 
@@ -331,10 +344,7 @@
     document.addEventListener('visibilitychange', () => { if (document.hidden) violation('tab_switch', 'You switched tab / minimised the window.'); });
     window.addEventListener('blur', () => setTimeout(() => { if (!document.hidden && !document.hasFocus()) violation('window_blur', 'You switched to another window.'); }, 300));
     document.addEventListener('fullscreenchange', () => {
-      if (!document.fullscreenElement && !S.done && !S.submitting) {
-        showGuard('You left full-screen mode', 'Checking…');
-        violation('fullscreen_exit', 'You exited full-screen mode.');
-      }
+      if (!document.fullscreenElement) violation('fullscreen_exit', 'You exited full-screen mode.');
     });
     ['copy', 'cut', 'paste', 'contextmenu', 'dragstart', 'selectstart', 'drop'].forEach((ev) => document.addEventListener(ev, (e) => e.preventDefault()));
     document.addEventListener('keydown', (e) => {

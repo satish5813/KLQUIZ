@@ -10,22 +10,24 @@
 .passkey-input { font-size: 1.4rem !important; letter-spacing: .25em; text-align: center; font-family: Consolas, monospace; }
 
 /* ---------- exam ---------- */
-body.exam { user-select: none; -webkit-user-select: none; overflow: hidden; height: 100vh; }
-.exam-top { background: #fff; border-bottom: 3px solid var(--kl-red); display: flex; align-items: center; gap: 14px; padding: 6px 16px; height: 62px; }
+body.exam { user-select: none; -webkit-user-select: none; overflow: hidden; height: 100vh; height: 100dvh; }
+/* The exam fills the visible screen (dvh excludes the phone's address bar); only the question and palette scroll. */
+body.exam #examView { display: flex; flex-direction: column; height: 100%; }
+.exam-top { background: #fff; border-bottom: 3px solid var(--kl-red); display: flex; align-items: center; gap: 14px; padding: 6px 16px; height: 62px; flex: none; }
 .exam-top .logo { height: 42px; }
-.exam-top .t { font-weight: 700; line-height: 1.2; color: var(--kl-red-dark); }
+.exam-top .t { font-weight: 700; line-height: 1.2; color: var(--kl-red-dark); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .exam-top .t small { display: block; color: var(--muted); font-weight: 500; }
 .exam-top .cand { text-align: right; font-size: .85rem; line-height: 1.3; }
 .timer { font-family: Consolas, monospace; font-size: 1.35rem; font-weight: 800; background: var(--ink); color: #fff; padding: 6px 14px; border-radius: 8px; min-width: 120px; text-align: center; }
 .timer.low { background: var(--kl-red); animation: blink 1s steps(2) infinite; }
 @keyframes blink { 50% { opacity: .75; } }
-.sec-tabs { display: flex; gap: 4px; background: #2b3346; padding: 6px 10px 0; overflow-x: auto; }
+.sec-tabs { display: flex; gap: 4px; background: #2b3346; padding: 6px 10px 0; overflow-x: auto; flex: none; }
 .sec-tabs button { border: none; background: transparent; color: #cdd3de; padding: 9px 16px; font: inherit; font-weight: 700; cursor: pointer; border-radius: 8px 8px 0 0; white-space: nowrap; }
 .sec-tabs button.active { background: var(--bg); color: var(--kl-red-dark); }
 .sec-tabs button .cnt { font-weight: 500; opacity: .7; font-size: .8rem; margin-left: 4px; }
-.exam-body { display: grid; grid-template-columns: 1fr 320px; height: calc(100vh - 62px - 44px); }
-.q-pane { display: flex; flex-direction: column; min-width: 0; position: relative; }
-.q-scroll { flex: 1; overflow-y: auto; overflow-x: hidden; padding: 20px 24px; position: relative; }
+.exam-body { display: grid; grid-template-columns: 1fr 320px; grid-template-rows: minmax(0, 1fr); flex: 1; min-height: 0; }
+.q-pane { display: flex; flex-direction: column; min-width: 0; min-height: 0; position: relative; }
+.q-scroll { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; padding: 20px 24px; position: relative; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; }
 .q-meta { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--line); padding-bottom: 10px; margin-bottom: 14px; gap: 10px; flex-wrap: wrap; }
 .q-meta b { font-size: 1.05rem; }
 .q-text { font-size: 1.08rem; white-space: pre-wrap; line-height: 1.6; margin-bottom: 18px; }
@@ -37,7 +39,7 @@ body.exam { user-select: none; -webkit-user-select: none; overflow: hidden; heig
 .opt.sel .l { background: var(--kl-red); border-color: var(--kl-red); color: #fff; }
 .opt .tx { white-space: pre-wrap; padding-top: 2px; }
 .watermark { position: absolute; inset: 0; pointer-events: none; display: flex; flex-wrap: wrap; align-content: space-around; justify-content: space-around; opacity: .045; overflow: hidden; font-weight: 800; font-size: 1.1rem; transform: rotate(-18deg) scale(1.3); }
-.q-actions { display: flex; gap: 8px; padding: 12px 20px; border-top: 1px solid var(--line); background: #fff; flex-wrap: wrap; }
+.q-actions { display: flex; gap: 8px; padding: 12px 20px; border-top: 1px solid var(--line); background: #fff; flex-wrap: wrap; flex: none; }
 .q-actions .grow { flex: 1; }
 .palette { background: #fff; border-left: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0; }
 .palette .ph { padding: 12px 14px; border-bottom: 1px solid var(--line); }
@@ -60,7 +62,13 @@ body.exam { user-select: none; -webkit-user-select: none; overflow: hidden; heig
   .palette { position: fixed; right: 0; top: 62px; bottom: 0; width: 300px; z-index: 40; transform: translateX(100%); transition: transform .2s; box-shadow: -6px 0 24px rgba(0, 0, 0, .15); }
   .palette.open { transform: none; }
   .palette-toggle { display: inline-flex; }
+  .exam-top { gap: 8px; padding: 6px 10px; }
+  .exam-top .logo { height: 32px; }
+  .exam-top .t { font-size: .85rem; }
   .exam-top .t small, .exam-top .cand { display: none; }
+  .q-actions { padding: 8px 10px; gap: 6px; }
+  .q-actions .btn { flex: 1 1 45%; padding-left: 8px; padding-right: 8px; }
+  .q-actions .grow { display: none; }
   .q-scroll { padding: 16px; }
   .timer { font-size: 1.1rem; min-width: 96px; }
 }
