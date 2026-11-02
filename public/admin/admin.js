@@ -16,6 +16,12 @@
       location.href = '/admin/login.html';
     });
     $('#menuBtn').addEventListener('click', () => $('#sidebar').classList.toggle('open'));
+    // Phones: tapping the dimmed backdrop (the menu's ::before, outside its box) closes the slide-in menu.
+    $('#sidebar').addEventListener('click', (e) => {
+      const sb = $('#sidebar');
+      const r = sb.getBoundingClientRect();
+      if (e.target === sb && (e.clientX > r.right || e.clientY < r.top)) sb.classList.remove('open');
+    });
     window.addEventListener('hashchange', route);
     route();
   }

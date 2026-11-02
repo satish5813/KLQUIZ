@@ -118,5 +118,28 @@
     return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
   };
 
+  // Phones: tables with 4+ columns are shown as one card per row (CSS .table.stack). Each cell is labelled
+  // with its column heading here, for tables already on the page and for every table rendered later.
+  function labelTables() {
+    document.querySelectorAll('table.table').forEach((t) => {
+      const heads = [...t.querySelectorAll('thead th')].map((th) => th.textContent.trim());
+      if (heads.length < 4) return;
+      t.classList.add('stack');
+      t.querySelectorAll('tbody tr').forEach((tr) => {
+        let col = 0;
+        [...tr.children].forEach((td) => {
+          if (!td.hasAttribute('data-label')) td.setAttribute('data-label', heads[col] || '');
+          col += Number(td.getAttribute('colspan')) || 1;
+        });
+      });
+    });
+  }
+  let labelQueued = false;
+  new MutationObserver(() => {
+    if (labelQueued) return;
+    labelQueued = true;
+    setTimeout(() => { labelQueued = false; labelTables(); }, 0);
+  }).observe(document.documentElement, { childList: true, subtree: true });
+
   window.KL = { api, el, append, clear, $, toast, modal, confirmBox, withBusy, fmtDate, fmtDuration, toLocalInput };
 }());
