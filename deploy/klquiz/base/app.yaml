@@ -56,7 +56,9 @@ spec:
             httpGet: {path: /api/health, port: http}
             periodSeconds: 10
             timeoutSeconds: 5
-            failureThreshold: 3
+            # One replica: taking it out of the Service never helps (there is nothing else to send traffic to), it only
+            # turns a busy moment into errors. Only stay out after 2 minutes of failures.
+            failureThreshold: 12
           livenessProbe:
             httpGet: {path: /api/health, port: http}
             initialDelaySeconds: 30
