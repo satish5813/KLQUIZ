@@ -6,7 +6,7 @@ const { all, get, run, tx } = require('../db');
 const {
   fail, cookieOpts, sign, verify, requireRegistered, requireStudent, v,
 } = require('../security');
-const { testWindowState, sectionsWithPaper, createAttempt, finalize, rankOf } = require('../exam');
+const { testWindowState, sectionsWithPaper, createAttempt, finalize } = require('../exam');
 
 const router = express.Router();
 
@@ -281,7 +281,6 @@ router.get('/result', (req, res) => {
     submitted_at: a.submitted_at, submit_reason: a.submit_reason,
   };
   if (!test.show_result) return res.json({ ...base, published: false });
-  const me = rankOf(test.id, a.id);
   const max = sectionsWithPaper(test.id).reduce((m, x) => m + x.question_count, 0) * test.marks_correct;
   res.json({
     ...base,
@@ -289,7 +288,8 @@ router.get('/result', (req, res) => {
     score: a.score, max_score: max, correct: a.correct, wrong: a.wrong, unanswered: a.unanswered,
     sections: JSON.parse(a.section_scores || '[]'),
     marks_correct: test.marks_correct, marks_wrong: test.marks_wrong,
-    rank: me.rank, candidates: me.candidates, time_taken_sec: me.time_taken_sec,
+    // No rank here: ranks are worked out by the admin after the exam closes, once every candidate has finished.
+    time_taken_sec: Math.round((Date.parse(a.submitted_at) - Date.parse(a.started_at)) / 1000),
   });
 });
 

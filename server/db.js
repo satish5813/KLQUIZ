@@ -163,11 +163,6 @@ db.exec(`CREATE TABLE IF NOT EXISTS attempt_questions (
 );
 CREATE INDEX IF NOT EXISTS idx_aq_question ON attempt_questions(question_id);`);
 
-// Ranking reads only these columns. An attempt row is ~25 KB (paper, answers), and score sits behind those text
-// columns in overflow pages, so without a covering index each rank lookup walks every attempt's pages (~60 ms at
-// 5,000 candidates, per result page). With it the lookup stays in the index (~0.5 ms).
-db.exec('CREATE INDEX IF NOT EXISTS idx_attempt_rank ON attempts(test_id, status, score, started_at, submitted_at)');
-
 const all = (sql, ...p) => db.prepare(sql).all(...p);
 const get = (sql, ...p) => db.prepare(sql).get(...p);
 const run = (sql, ...p) => db.prepare(sql).run(...p);

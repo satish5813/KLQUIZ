@@ -168,19 +168,8 @@ function rankings(testId) {
     ORDER BY rank, a.submitted_at`, testId);
 }
 
-// One candidate's place in the same ranking, without loading every attempt (the result page is opened by thousands
-// of candidates at the same moment when time runs out). rank = 1 + candidates strictly ahead, as RANK() gives.
-function rankOf(testId, attemptId) {
-  return get(`
-    WITH me AS (SELECT score, julianday(submitted_at) - julianday(started_at) AS t, submitted_at, started_at
-                FROM attempts WHERE id = ?)
-    SELECT 1 + (SELECT COUNT(*) FROM attempts a, me WHERE a.test_id = ? AND a.status = 'submitted'
-                  AND (a.score > me.score OR (a.score = me.score AND julianday(a.submitted_at) - julianday(a.started_at) < me.t))) AS rank,
-           (SELECT COUNT(*) FROM attempts WHERE test_id = ? AND status = 'submitted') AS candidates,
-           ROUND((SELECT t FROM me) * 86400) AS time_taken_sec`, attemptId, testId, testId);
-}
 
 module.exports = {
-  testWindowState, sectionsWithPaper, createAttempt, grade, finalize, finalizeExpired, rankings, rankOf, shuffle,
+  testWindowState, sectionsWithPaper, createAttempt, grade, finalize, finalizeExpired, rankings, shuffle,
   mixCounts, bankStatus, pickQuestions,
 };

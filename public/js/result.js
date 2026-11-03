@@ -34,10 +34,9 @@
       el('div.grid-2.mt', [
         el('div.card', { style: 'text-align:center' }, [ring, el('div.muted', { text: `${pct}% score` })]),
         el('div.rank-box', [
-          el('div', { text: 'Provisional rank' }),
-          el('div.n', { text: r.rank ? `#${r.rank}` : '—' }),
-          el('div', { text: `among ${r.candidates} candidate(s) who have submitted so far` }),
-          el('div.small.mt', { text: `Time taken: ${fmtDuration(r.time_taken_sec)}` }),
+          el('div', { text: 'Time taken' }),
+          el('div.n', { text: fmtDuration(r.time_taken_sec) }),
+          el('div.small.mt', { text: 'Ranks are calculated after the exam closes, once every candidate has finished.' }),
         ]),
       ]),
       el('div.card.mt', [
@@ -52,7 +51,7 @@
             el('td', { text: s.wrong }), el('td', { text: s.unanswered }), el('td', el('b', { text: s.score })),
           ]))),
         ])),
-        el('p.small.muted.mt', { text: `Marking: +${r.marks_correct} per correct${r.marks_wrong ? `, −${r.marks_wrong} per wrong` : ''}. The rank shown is provisional and may change as other candidates submit. Final merit list will be published by KL University.` }),
+        el('p.small.muted.mt', { text: `Marking: +${r.marks_correct} per correct${r.marks_wrong ? `, −${r.marks_wrong} per wrong` : ''}. Ranks and the final merit list will be published by KL University after the exam closes.` }),
       ]),
     );
   }
