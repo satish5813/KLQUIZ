@@ -172,10 +172,16 @@ app.use((err, req, res, next) => {
 const PORT = Number(process.env.PORT) || 3000;
 // Behind Cloudflare Tunnel or a reverse proxy, set HOST=127.0.0.1 so the app is reachable only through it.
 const HOST = process.env.HOST || '0.0.0.0';
-const server = app.listen(PORT, HOST, () => {
+// A long accept queue so a burst of new connections (thousands of candidates at the start or end of an exam) waits
+// instead of being dropped; a dropped connection is retried by the client's TCP only after 1, 3, 7, 15 s.
+const server = app.listen({ port: PORT, host: HOST, backlog: 4096 }, () => {
   console.log(`KL Entrance Exam portal running at http://${HOST === '0.0.0.0' ? 'localhost' : HOST}:${PORT}`);
   console.log(`Admin portal: http://${HOST === '0.0.0.0' ? 'localhost' : HOST}:${PORT}/admin/`);
 });
+// Keep idle connections from the proxy (Traefik/Cloudflare reuse them for up to 90 s) open longer than Node's 5 s
+// default, so traffic flows over existing connections rather than constantly opening new ones.
+server.keepAliveTimeout = 95000;
+server.headersTimeout = 100000;
 
 // Clean stop for systemd / PM2 restarts: finish in-flight requests, then close the database.
 function shutdown(signal) {
