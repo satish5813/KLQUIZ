@@ -82,6 +82,8 @@ body.exam #examView { display: flex; flex-direction: column; height: 100%; }
 .pbtn.cur { outline: 3px solid #f0b400; outline-offset: 1px; }
 .palette .pf { padding: 12px 14px; padding-bottom: max(12px, env(safe-area-inset-bottom)); border-top: 1px solid var(--line); }
 .palette-toggle { display: inline-flex; flex: none; }
+/* Candidates may submit at any time; on phones the palette (with its Submit button) is folded away, so the header carries one too. */
+.submit-top { flex: none; }
 @media (min-width: 861px) {
   .exam-body { grid-template-columns: minmax(0, 1fr) 320px; }
   .palette { position: static; width: auto; visibility: visible; z-index: auto; transition: none; }

@@ -201,6 +201,7 @@
     if (e.target === p && (e.clientX < r.left || e.clientY < r.top)) p.classList.remove('open');
   });
   $('#submitBtn').addEventListener('click', confirmSubmit);
+  $('#submitTopBtn').addEventListener('click', confirmSubmit);
 
   // ---------------- autosave (serialised, retried) ----------------
   const queue = [];

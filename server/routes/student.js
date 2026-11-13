@@ -61,14 +61,16 @@ router.post('/register', registerLimiter, (req, res) => {
     return res.json({ ok: true, name: fullName, test: test.name, returning: false });
   }
 
+  // 'contact' asks for name, email and mobile only; 'full' also for the address and a parent's mobile.
+  const full = test.registration_mode !== 'contact';
   const d = {
     full_name: fullName,
-    address: v.str(b.address, 'Address', { min: 5, max: 500 }),
+    address: full ? v.str(b.address, 'Address', { min: 5, max: 500 }) : '',
     email: v.email(b.email),
     mobile: v.mobile(b.mobile, 'Mobile number'),
-    parent_mobile: v.mobile(b.parent_mobile, 'Parent mobile number'),
+    parent_mobile: full ? v.mobile(b.parent_mobile, 'Parent mobile number') : '',
   };
-  if (d.mobile === d.parent_mobile) fail(400, 'Parent mobile number must be different from your mobile number');
+  if (full && d.mobile === d.parent_mobile) fail(400, 'Parent mobile number must be different from your mobile number');
 
   let student = get('SELECT * FROM students WHERE test_id = ? AND email = ?', test.id, d.email);
   const returning = !!student;

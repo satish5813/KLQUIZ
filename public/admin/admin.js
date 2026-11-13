@@ -330,7 +330,8 @@
       mix_medium: el('input', { type: 'number', value: t.mix_medium, min: 0, max: 100, disabled: t.locked }),
       mix_hard: el('input', { type: 'number', value: t.mix_hard, min: 0, max: 100, disabled: t.locked }),
       registration_mode: el('select', [
-        el('option', { value: 'full', text: 'Full details (name, address, email, mobiles)', selected: t.registration_mode !== 'name_only' }),
+        el('option', { value: 'full', text: 'Full details (name, address, email, mobiles)', selected: !['name_only', 'contact'].includes(t.registration_mode) }),
+        el('option', { value: 'contact', text: 'Name, email and mobile', selected: t.registration_mode === 'contact' }),
         el('option', { value: 'name_only', text: 'Name only (trial / practice session)', selected: t.registration_mode === 'name_only' }),
       ]),
       selection_mode: el('select', { disabled: t.locked }, [
