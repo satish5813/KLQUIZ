@@ -246,7 +246,7 @@ router.put('/tests/:id', (req, res) => {
     mix_medium: v.int(b.mix_medium, 'Medium %', { min: 0, max: 100 }),
     mix_hard: v.int(b.mix_hard, 'Hard %', { min: 0, max: 100 }),
     selection_mode: b.selection_mode === 'fixed' ? 'fixed' : 'random',
-    registration_mode: ['name_only', 'contact'].includes(b.registration_mode) ? b.registration_mode : 'full',
+    registration_mode: ['name_only', 'contact', 'application'].includes(b.registration_mode) ? b.registration_mode : 'full',
     shuffle_questions: b.shuffle_questions ? 1 : 0,
     shuffle_options: b.shuffle_options ? 1 : 0,
     show_result: b.show_result ? 1 : 0,
@@ -599,8 +599,9 @@ router.get('/attempts/:id', (req, res) => {
   });
 });
 
-// Name-only (trial) registrations store a placeholder email; exports show it blank.
-const shownEmail = (e) => (String(e).startsWith('name-only:') ? '' : e);
+// Name-only (trial) registrations store a placeholder email (exports show it blank); application-number
+// registrations store 'app:<number>'.
+const shownEmail = (e) => (String(e).startsWith('name-only:') ? '' : String(e).startsWith('app:') ? `Application No ${String(e).slice(4)}` : e);
 
 // CSV exports (Excel-friendly, with formula-injection protection).
 const csvCell = (val) => {

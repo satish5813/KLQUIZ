@@ -30,6 +30,10 @@ const STATE_MSG = {
   ended: 'The exam window has closed.',
 };
 
+// What the exam and result pages show under the candidate's name: their email, the application number, or nothing
+// for a name-only (trial) registration.
+const shownContact = (e) => (e.startsWith('name-only:') ? '' : e.startsWith('app:') ? `Application No ${e.slice(4)}` : e);
+
 // ---------- public ----------
 router.get('/tests', (req, res) => {
   const tests = all("SELECT * FROM tests WHERE status = 'live' ORDER BY start_at, id")
@@ -59,6 +63,28 @@ router.post('/register', registerLimiter, (req, res) => {
       test.id, fullName, `name-only:${crypto.randomBytes(8).toString('hex')}`, req.ip);
     res.cookie('kl_reg', sign({ sid: Number(r.lastInsertRowid), tid: test.id, role: 'reg' }, 3600), cookieOpts(3600 * 1000));
     return res.json({ ok: true, name: fullName, test: test.name, returning: false });
+  }
+
+  // 'application' asks for the name and the application number (KLBSAT). The number is kept in the email column as
+  // 'app:<number>', so the per-test uniqueness rule gives one attempt per application number; the same number and
+  // name resume an unfinished exam on any device.
+  if (test.registration_mode === 'application') {
+    const appNo = v.str(b.application_no, 'Application number', { min: 3, max: 30 }).replace(/\s+/g, '').toUpperCase();
+    if (!/^[A-Z0-9/-]+$/.test(appNo)) fail(400, 'Application number may contain only letters, digits, / and -');
+    const key = `app:${appNo}`;
+    let student = get('SELECT * FROM students WHERE test_id = ? AND email = ?', test.id, key);
+    const returning = !!student;
+    if (student) {
+      if (student.full_name.toLowerCase() !== fullName.toLowerCase()) fail(409, 'This application number is already registered with a different name.');
+      const a = get('SELECT status FROM attempts WHERE student_id = ?', student.id);
+      if (a && a.status === 'submitted') fail(409, 'You have already submitted this exam.');
+    } else {
+      const r = run(`INSERT INTO students (test_id, full_name, address, email, mobile, parent_mobile, reg_ip) VALUES (?, ?, '', ?, '', '', ?)`,
+        test.id, fullName, key, req.ip);
+      student = get('SELECT * FROM students WHERE id = ?', r.lastInsertRowid);
+    }
+    res.cookie('kl_reg', sign({ sid: student.id, tid: test.id, role: 'reg' }, 3600), cookieOpts(3600 * 1000));
+    return res.json({ ok: true, name: student.full_name, test: test.name, returning });
   }
 
   // 'contact' asks for name, email and mobile only; 'full' also for the address and a parent's mobile.
@@ -144,7 +170,7 @@ router.get('/exam', (req, res) => {
   const test = get('SELECT * FROM tests WHERE id = ?', s.test_id);
   const a = autoFinalizeIfExpired(loadAttempt(s.id));
   res.json({
-    student: { full_name: s.full_name, email: s.email.startsWith('name-only:') ? '' : s.email, mobile: s.mobile },
+    student: { full_name: s.full_name, email: shownContact(s.email), mobile: s.mobile },
     test: {
       name: test.name, exam_code: test.exam_code, description: test.description, duration_min: test.duration_min,
       marks_correct: test.marks_correct, marks_wrong: test.marks_wrong, max_violations: test.max_violations,
@@ -278,7 +304,7 @@ router.get('/result', (req, res) => {
   const test = get('SELECT * FROM tests WHERE id = ?', a.test_id);
   const s = req.student;
   const base = {
-    student: { full_name: s.full_name, email: s.email.startsWith('name-only:') ? '' : s.email, mobile: s.mobile },
+    student: { full_name: s.full_name, email: shownContact(s.email), mobile: s.mobile },
     test: { name: test.name, exam_code: test.exam_code },
     submitted_at: a.submitted_at, submit_reason: a.submit_reason,
   };

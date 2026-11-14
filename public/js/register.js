@@ -35,16 +35,21 @@
     const waiting = t.state === 'not_started';
     $('#regBtn').disabled = waiting;
     $('#regBtn').textContent = waiting ? `Registration opens at ${fmtDate(t.start_at)}` : 'Submit & continue';
-    // Trial sessions ask only for a name; 'contact' exams for name, email and mobile.
-    const nameOnly = t.registration_mode === 'name_only';
+    // Trial sessions ask only for a name; 'application' exams for the name and application number; 'contact' exams
+    // for name, email and mobile.
+    const appNo = t.registration_mode === 'application';
+    const nameOnly = t.registration_mode === 'name_only' || appNo;
     const contact = t.registration_mode === 'contact';
     ['address', 'email'].forEach((id) => $(`#${id}`).closest('.field').classList.toggle('hidden', nameOnly || (contact && id === 'address')));
     $('#mobile').closest('.grid-2').classList.toggle('hidden', nameOnly);
     $('#parent_mobile').closest('.field').classList.toggle('hidden', contact);
-    $('label[for=full_name]').textContent = nameOnly ? 'Your full name' : 'Full name (as in 10th certificate)';
-    $('#resumeHint').textContent = nameOnly
-      ? 'Got disconnected during the exam? Reopen this page in the same browser to continue.'
-      : 'Already registered and got disconnected? Enter the same email and mobile number to resume your exam.';
+    $('#application_no').closest('.field').classList.toggle('hidden', !appNo);
+    $('label[for=full_name]').textContent = nameOnly && !appNo ? 'Your full name' : 'Full name (as in 10th certificate)';
+    $('#resumeHint').textContent = appNo
+      ? 'Got disconnected? Enter the same application number and name to continue your exam.'
+      : nameOnly
+        ? 'Got disconnected during the exam? Reopen this page in the same browser to continue.'
+        : 'Already registered and got disconnected? Enter the same email and mobile number to resume your exam.';
   }
   const mode = () => (tests.find((x) => String(x.id) === $('#test').value) || {}).registration_mode;
   const isNameOnly = () => mode() === 'name_only';
@@ -60,6 +65,10 @@
     if (v('full_name').length < 3) return 'Enter your full name';
     if (!/^[\p{L} .'-]+$/u.test(v('full_name'))) return 'Full name may contain only letters, spaces, dots and hyphens';
     if (isNameOnly()) return $('#agree').checked ? null : 'Please accept the declaration';
+    if (mode() === 'application') {
+      if (!/^[A-Za-z0-9/-]{3,30}$/.test(v('application_no').replace(/\s+/g, ''))) return 'Enter your application number';
+      return $('#agree').checked ? null : 'Please accept the declaration';
+    }
     const contact = mode() === 'contact';
     if (!contact && v('address').length < 5) return 'Enter your address';
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(v('email'))) return 'Enter a valid email address';
@@ -82,7 +91,7 @@
         const r = await api('/api/student/register', { method: 'POST', body: {
           test_id: Number($('#test').value),
           full_name: $('#full_name').value, address: $('#address').value, email: $('#email').value,
-          mobile: $('#mobile').value, parent_mobile: $('#parent_mobile').value,
+          mobile: $('#mobile').value, parent_mobile: $('#parent_mobile').value, application_no: $('#application_no').value,
         } });
         $('#hello').textContent = `${r.returning ? 'Welcome back' : 'Registered'}, ${r.name}. Exam: ${r.test}.`;
         $('#regForm').classList.add('hidden');

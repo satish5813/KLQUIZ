@@ -150,7 +150,8 @@ if (!tCols.includes('mix_easy')) {
            ALTER TABLE tests ADD COLUMN selection_mode TEXT NOT NULL DEFAULT 'random';`);
 }
 
-// Registration form per test: 'full' (name, address, email, mobiles), 'contact' (name, email, mobile) or
+// Registration form per test: 'full' (name, address, email, mobiles), 'contact' (name, email, mobile),
+// 'application' (name and application number) or
 // 'name_only' (trial/practice sessions).
 if (!db.prepare('PRAGMA table_info(tests)').all().some((c) => c.name === 'registration_mode')) {
   db.exec("ALTER TABLE tests ADD COLUMN registration_mode TEXT NOT NULL DEFAULT 'full'");
