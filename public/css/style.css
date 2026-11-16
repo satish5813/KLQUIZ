@@ -200,3 +200,19 @@ ol.structures li { border: 1px solid var(--line); }
 .q-item .mark { font-weight: 700; white-space: nowrap; }
 /* *phrase* in question text: the portion to improve / a title — underlined as exam papers do */
 .q-text em, .opt .tx em, .q-item li em, .expl em { font-style: italic; text-decoration: underline; text-underline-offset: 3px; }
+
+/* ---------- two-campus brand header: KLH Hyderabad (left), KL Vijayawada (right) ---------- */
+.topbar.brand { border-bottom: 0; box-shadow: 0 1px 0 var(--line), 0 6px 18px rgba(16, 24, 40, .05); }
+.topbar.brand::after { content: ""; position: absolute; left: 0; right: 0; bottom: -3px; height: 3px;
+  background: linear-gradient(90deg, #e5007d 0%, #f39200 18%, var(--kl-red) 40%, var(--kl-red-dark) 100%); }
+.campus { display: flex; flex-direction: column; align-items: center; flex: none; text-decoration: none; gap: 1px; }
+.campus .logo { height: 30px; width: auto; display: block; }
+.campus span { display: none; font-size: .62rem; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; color: var(--muted); line-height: 1; }
+.topbar.brand .title { text-align: left; }
+@media (max-width: 420px) { .topbar.brand .title { font-size: .8rem; } .campus .logo { height: 26px; } }
+@media (min-width: 640px) {
+  .campus .logo { height: 42px; }
+  .campus span { display: block; }
+  .topbar.brand .title { padding-left: 14px; border-left: 1px solid var(--line); }
+  .campus-r { padding-left: 14px; border-left: 1px solid var(--line); }
+}

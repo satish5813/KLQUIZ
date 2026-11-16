@@ -285,7 +285,7 @@
   }
 
   // ---------------- test detail ----------------
-  const TABS = [['setup', 'Setup & Syllabus'], ['bank', 'Question Bank'], ['paper', 'Question Paper'], ['access', 'Pass Key & Go Live'], ['students', 'Students'], ['results', 'Results & Ranking']];
+  const TABS = [['setup', 'Setup & Syllabus'], ['bank', 'Question Bank'], ['paper', 'Question Paper'], ['access', 'Pass Key & Go Live'], ['students', 'Students'], ['results', 'Results & Ranking'], ['proctoring', 'AI Proctoring']];
 
   async function testDetail(id, tab = 'setup') {
     const t = await api(`/api/admin/tests/${id}`);
@@ -300,7 +300,7 @@
       body,
     );
     if (t.locked) body.appendChild(el('div.alert.warn', { text: 'Candidates have started this test. The question paper, sections and marking scheme are locked.' }));
-    const tabs = { setup: tabSetup, bank: tabBank, paper: tabPaper, access: tabAccess, students: tabStudents, results: tabResults };
+    const tabs = { setup: tabSetup, bank: tabBank, paper: tabPaper, access: tabAccess, students: tabStudents, results: tabResults, proctoring: tabProctoring };
     await (tabs[tab] || tabSetup)(t, body);
   }
 
@@ -336,6 +336,10 @@
         el('option', { value: 'contact', text: 'Name, email and mobile', selected: t.registration_mode === 'contact' }),
         el('option', { value: 'application', text: 'Name and application number', selected: t.registration_mode === 'application' }),
         el('option', { value: 'name_only', text: 'Name only (trial / practice session)', selected: t.registration_mode === 'name_only' }),
+      ]),
+      proctor_mode: el('select', [
+        el('option', { value: 'offline', text: 'Offline — exam hall with invigilators (no camera)', selected: t.proctor_mode !== 'ai' }),
+        el('option', { value: 'ai', text: 'Online from home — AI video proctoring (camera + microphone)', selected: t.proctor_mode === 'ai' }),
       ]),
       selection_mode: el('select', { disabled: t.locked }, [
         el('option', { value: 'random', text: 'Random set for every student (same difficulty mix)', selected: t.selection_mode === 'random' }),
@@ -390,7 +394,7 @@
       await api(`/api/admin/tests/${t.id}`, { method: 'PUT', body: {
         name: f.name.value, description: f.description.value, duration_min: Number(f.duration_min.value),
         marks_correct: Number(f.marks_correct.value), marks_wrong: Number(f.marks_wrong.value), max_violations: Number(f.max_violations.value),
-        mix_easy: Number(f.mix_easy.value), mix_medium: Number(f.mix_medium.value), mix_hard: Number(f.mix_hard.value), selection_mode: f.selection_mode.value, registration_mode: f.registration_mode.value,
+        mix_easy: Number(f.mix_easy.value), mix_medium: Number(f.mix_medium.value), mix_hard: Number(f.mix_hard.value), selection_mode: f.selection_mode.value, registration_mode: f.registration_mode.value, proctor_mode: f.proctor_mode.value,
         start_at: f.start_at.value ? new Date(f.start_at.value).toISOString() : null,
         end_at: f.end_at.value ? new Date(f.end_at.value).toISOString() : null,
         shuffle_questions: f.shuffle_questions.checked, shuffle_options: f.shuffle_options.checked, show_result: f.show_result.checked,
@@ -411,7 +415,10 @@
           field('Exam window opens', f.start_at, 'Leave empty to allow any time while live'),
           field('Exam window closes', f.end_at, 'Attempts are force-submitted at this time'),
         ]),
-        el('div.grid-2', [field('Registration form', f.registration_mode, 'Name only: candidates type just their name (then the pass key). Use for trials; real exams need full details.')]),
+        el('div.grid-2', [
+          field('Registration form', f.registration_mode, 'Name only: candidates type just their name (then the pass key). Use for trials; real exams need full details.'),
+          field('Exam mode', f.proctor_mode, 'AI proctoring: candidates must pass a camera, microphone and face check; the browser watches continuously and Gemini 3.1 Flash-Lite checks a photo every 60 s.'),
+        ]),
         el('div.row', [
           el('label.check', [f.shuffle_questions, 'Shuffle question order per student']),
           el('label.check', [f.shuffle_options, 'Shuffle options per student']),
@@ -813,6 +820,97 @@
         ])) : el('p.muted', { text: 'No submissions yet.' }),
       ]),
     );
+  }
+
+  // ----- AI proctoring -----
+  const riskBadge = (r) => el('span.badge.' + (r === 'high' ? 'red' : r === 'medium' ? 'pending' : 'approved'), { text: r.toUpperCase() });
+  const rupees = (n) => '₹' + Number(n || 0).toFixed(2);
+
+  async function tabProctoring(t, body) {
+    const r = await api('/api/admin/tests/' + t.id + '/proctoring');
+    if (r.proctor_mode !== 'ai') {
+      body.append(el('div.alert.warn', { text: 'This exam is in Offline (exam hall) mode. Switch "Exam mode" to "Online from home — AI video proctoring" in Setup to proctor candidates by camera.' }));
+      if (!r.rows.length) return;
+    }
+    if (r.ai.failing) {
+      body.append(el('div.alert.error', { text: 'AI checks are failing right now, so only the browser findings are being recorded. Gemini says: ' + r.ai.error + ' (Check the Gemini API key and billing in Google AI Studio.)' }));
+    }
+    const filter = el('select', [['', 'All candidates'], ['high', 'High risk'], ['medium', 'Medium risk'], ['flagged', 'Any finding']].map(([v, l]) => el('option', { value: v, text: l })));
+    const tbody = el('tbody');
+    const render = () => {
+      const f = filter.value;
+      clear(tbody).append(...r.rows.filter((x) => !f || (f === 'flagged' ? x.flags > 0 : x.risk === f)).map((x) => el('tr', [
+        el('td', [el('b', { text: x.full_name }), el('div.small.muted', { text: x.contact })]),
+        el('td', badge(x.status)),
+        el('td', riskBadge(x.risk)),
+        el('td', { text: x.flags }),
+        el('td', { text: x.high }),
+        el('td', { text: x.ai_calls }),
+        el('td', { text: rupees(x.cost_inr) }),
+        el('td', el('button.btn.secondary.sm', { type: 'button', text: 'Report', onclick: handle(() => proctorReport(x.attempt_id)) })),
+      ])));
+    };
+    filter.addEventListener('change', render);
+    render();
+    const tt = r.totals;
+    body.append(
+      el('div.stat-grid.mb', [
+        stat(tt.candidates, 'Candidates proctored', ''), stat(tt.high, 'High risk', 'red'), stat(tt.medium, 'Medium risk', ''),
+        stat(rupees(tt.cost_inr), 'AI cost (' + tt.ai_calls + ' checks)', ''), stat(rupees(tt.per_candidate_inr), 'AI cost per candidate', 'green'),
+      ]),
+      el('div.card', [
+        el('div.card-title', [el('h3', { text: 'Proctoring report' }), el('div.row', [
+          filter,
+          el('button.btn.secondary.sm', { type: 'button', text: '⟳ Refresh', onclick: route }),
+          el('a.btn.sm', { href: '/api/admin/tests/' + t.id + '/proctoring.csv', text: '⬇ Export CSV' }),
+        ])]),
+        el('p.small.muted', { text: 'Model ' + r.model + ': one check every 60 s, plus one at once for every browser finding. High risk = another person, a phone or another screen confirmed by the AI, or 3+ serious browser findings. Findings are evidence for review; the proctor never submits an exam. Cost at $1 = ₹' + r.usd_inr + '.' }),
+        r.rows.length ? el('div.table-wrap', el('table.table', [
+          el('thead', el('tr', ['Candidate', 'Status', 'Risk', 'Findings', 'Serious', 'AI checks', 'AI cost', ''].map((h) => el('th', { text: h })))),
+          tbody,
+        ])) : el('p.muted', { text: 'No candidates yet.' }),
+      ]),
+    );
+  }
+
+  async function proctorReport(attemptId) {
+    const d = await api('/api/admin/attempts/' + attemptId + '/proctor');
+    const s = d.summary;
+    const sev = ['Info', 'Low', 'Medium', 'High'];
+    const fileUrl = (e) => '/api/admin/proctor/file/' + e.id;
+    const evidence = (e) => (e.file === 'image'
+      ? el('a', { href: fileUrl(e), target: '_blank', rel: 'noopener' }, el('img.proc-shot', { src: fileUrl(e), alt: e.label, loading: 'lazy' }))
+      : e.file === 'audio' ? el('audio', { controls: true, preload: 'none', src: fileUrl(e) }) : null);
+    const ref = d.events.find((e) => e.kind === 'reference');
+    const events = d.events.filter((e) => e.kind !== 'reference');
+    const a = d.attempt;
+    modal({
+      title: 'Proctoring report — ' + d.student.full_name,
+      wide: true,
+      body: [
+        el('div.proc-report', [
+          el('div.row.mb', [
+            riskBadge(s.risk), el('span.badge', { text: s.flags + ' findings' }), el('span.badge.red', { text: s.high + ' serious' }),
+            el('span.badge.pending', { text: a.violations + ' tab/screen violations' }),
+            el('span.badge.blue', { text: s.ai_calls + ' AI checks · ' + rupees(s.cost_inr) }),
+          ]),
+          el('p.small.muted', { text: d.test.exam_code + ' · ' + d.test.name + ' · ' + d.student.contact + ' · started ' + fmtDate(a.started_at)
+            + (a.submitted_at ? ' · submitted ' + fmtDate(a.submitted_at) + ' (' + a.submit_reason + ')' : ' · in progress') }),
+          ref ? el('div.mb', [el('div.small.muted', { text: 'Reference photo (start of exam)' }), evidence(ref)]) : null,
+          events.length ? el('div.proc-timeline', events.map((e) => el('div.proc-ev.sev' + e.severity, [
+            el('div.small', [el('b', { text: new Date(e.at).toLocaleTimeString() }), el('div.muted', { text: e.source === 'ai' ? 'Gemini' : 'Browser' })]),
+            el('div', [
+              el('div', [el('b', { text: e.label }), ' ', el('span.badge' + (e.severity === 3 ? '.red' : e.severity === 2 ? '.pending' : ''), { text: sev[e.severity] })]),
+              e.detail ? el('div.small.muted', { text: e.detail }) : null,
+            ]),
+            el('div', evidence(e)),
+          ]))) : el('p.muted', { text: 'No findings: the candidate stayed in view and alone throughout.' }),
+          a.violation_log.length ? el('details.mt', [el('summary', { text: 'Tab / full-screen violations' }),
+            el('ul.small', a.violation_log.map((v) => el('li', { text: fmtDate(v.at) + ' — ' + v.type })))]) : null,
+        ]),
+      ],
+      actions: [{ label: 'Print / Save as PDF', class: 'secondary', onClick: () => window.print() }, { label: 'Close' }],
+    });
   }
 
   async function answerSheet(attemptId) {

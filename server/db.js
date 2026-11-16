@@ -157,6 +157,33 @@ if (!db.prepare('PRAGMA table_info(tests)').all().some((c) => c.name === 'regist
   db.exec("ALTER TABLE tests ADD COLUMN registration_mode TEXT NOT NULL DEFAULT 'full'");
 }
 
+// Exam mode per test: 'offline' (exam hall with invigilators) or 'ai' (online from home with AI video proctoring).
+if (!db.prepare('PRAGMA table_info(tests)').all().some((c) => c.name === 'proctor_mode')) {
+  db.exec("ALTER TABLE tests ADD COLUMN proctor_mode TEXT NOT NULL DEFAULT 'offline'");
+}
+// AI proctoring totals per attempt (Gemini calls, tokens and their cost) and the number of flagged incidents.
+if (!db.prepare('PRAGMA table_info(attempts)').all().some((c) => c.name === 'ai_calls')) {
+  db.exec(`ALTER TABLE attempts ADD COLUMN ai_calls INTEGER NOT NULL DEFAULT 0;
+           ALTER TABLE attempts ADD COLUMN ai_tokens_in INTEGER NOT NULL DEFAULT 0;
+           ALTER TABLE attempts ADD COLUMN ai_tokens_out INTEGER NOT NULL DEFAULT 0;
+           ALTER TABLE attempts ADD COLUMN ai_cost_usd REAL NOT NULL DEFAULT 0;
+           ALTER TABLE attempts ADD COLUMN proctor_flags INTEGER NOT NULL DEFAULT 0;
+           ALTER TABLE attempts ADD COLUMN proctor_high INTEGER NOT NULL DEFAULT 0;`);
+}
+// Proctoring timeline: what the browser detected, what Gemini saw, with the evidence file (snapshot/audio) if any.
+// severity: 1 = low, 2 = medium, 3 = high.
+db.exec(`CREATE TABLE IF NOT EXISTS proctor_events (
+  id INTEGER PRIMARY KEY,
+  attempt_id INTEGER NOT NULL REFERENCES attempts(id) ON DELETE CASCADE,
+  at TEXT NOT NULL,
+  source TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  severity INTEGER NOT NULL DEFAULT 1,
+  detail TEXT NOT NULL DEFAULT '',
+  file TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_pe_attempt ON proctor_events(attempt_id, id);`);
+
 // Questions served to each attempt (needed when every student gets a different random set).
 db.exec(`CREATE TABLE IF NOT EXISTS attempt_questions (
   attempt_id INTEGER NOT NULL REFERENCES attempts(id) ON DELETE CASCADE,

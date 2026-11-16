@@ -63,9 +63,13 @@ app.use(helmet({
   contentSecurityPolicy: {
     directives: {
       defaultSrc: ["'self'"],
-      scriptSrc: ["'self'"],
+      // wasm-unsafe-eval lets the browser compile the in-browser proctoring detector (MediaPipe WebAssembly) served
+      // from our own origin; it does not allow eval() of JavaScript.
+      scriptSrc: ["'self'", "'wasm-unsafe-eval'"],
       styleSrc: ["'self'", "'unsafe-inline'"],
-      imgSrc: ["'self'", 'data:'],
+      imgSrc: ["'self'", 'data:', 'blob:'],
+      mediaSrc: ["'self'", 'blob:'],
+      workerSrc: ["'self'", 'blob:'],
       connectSrc: ["'self'"],
       fontSrc: ["'self'"],
       objectSrc: ["'none'"],
@@ -78,7 +82,8 @@ app.use(helmet({
   referrerPolicy: { policy: 'no-referrer' },
 }));
 app.use((req, res, next) => {
-  res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=(), payment=()');
+  // Camera and microphone are used only by our own pages, for AI-proctored online exams.
+  res.setHeader('Permissions-Policy', 'camera=(self), microphone=(self), geolocation=(), payment=()');
   next();
 });
 
@@ -123,6 +128,7 @@ const VENDOR = {
   '/vendor/katex/': path.join(NM, 'katex', 'dist'),
   '/vendor/smiles-drawer/': path.join(NM, 'smiles-drawer', 'dist'),
   '/vendor/dompurify/': path.join(NM, 'dompurify', 'dist'),
+  '/vendor/mediapipe/': path.join(NM, '@mediapipe', 'tasks-vision'),
 };
 
 // Cache busting: pages are served with every local script/stylesheet URL stamped with a hash of the file

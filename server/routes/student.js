@@ -7,6 +7,7 @@ const {
   fail, cookieOpts, sign, verify, requireRegistered, requireStudent, v,
 } = require('../security');
 const { testWindowState, sectionsWithPaper, createAttempt, finalize } = require('../exam');
+const proctor = require('../proctor');
 
 const router = express.Router();
 
@@ -174,7 +175,7 @@ router.get('/exam', (req, res) => {
     test: {
       name: test.name, exam_code: test.exam_code, description: test.description, duration_min: test.duration_min,
       marks_correct: test.marks_correct, marks_wrong: test.marks_wrong, max_violations: test.max_violations,
-      instructions: test.instructions, state: testWindowState(test),
+      instructions: test.instructions, state: testWindowState(test), proctor_mode: test.proctor_mode,
       sections: sectionsWithPaper(test.id).map((x) => ({ name: x.name, question_count: x.question_count })),
     },
     attempt: a ? { status: a.status, deadline_at: a.deadline_at } : null,
@@ -289,6 +290,56 @@ router.post('/violation', (req, res) => {
     return res.json({ violations: count, max: test.max_violations, auto_submitted: true });
   }
   res.json({ violations: count, max: test.max_violations });
+});
+
+// ---------- AI proctoring (online-from-home exams) ----------
+// Per-attempt pacing, so a tampered browser cannot run up Gemini costs: a routine frame at most every 40 s, a frame
+// for a browser finding at most every 15 s, an event or recording of the same kind at most every 10 s.
+const proctorPace = new Map(); // `${attemptId}:${what}` -> last time (ms)
+function paced(key, ms) {
+  const now = Date.now();
+  if (now - (proctorPace.get(key) || 0) < ms) return true;
+  proctorPace.set(key, now);
+  if (proctorPace.size > 50000) proctorPace.clear();
+  return false;
+}
+function proctoredAttempt(req) {
+  const a = activeAttempt(req.student.id);
+  const test = get('SELECT proctor_mode FROM tests WHERE id = ?', a.test_id);
+  if (test.proctor_mode !== 'ai') fail(400, 'This exam is not AI-proctored');
+  return a;
+}
+const b64 = (val, max, what) => {
+  const buf = Buffer.from(v.str(val, what, { max: Math.ceil(max * 1.37) + 4 }), 'base64');
+  if (buf.length < 100 || buf.length > max) fail(400, `Invalid ${what}`);
+  return buf;
+};
+
+router.post('/proctor/frame', async (req, res) => {
+  const a = proctoredAttempt(req);
+  const reason = req.body.reason === 'reference' || req.body.reason === 'periodic' || proctor.BROWSER_KINDS.includes(req.body.reason)
+    ? req.body.reason : 'periodic';
+  const jpeg = b64(req.body.image, 300000, 'image');
+  if (jpeg[0] !== 0xff || jpeg[1] !== 0xd8) fail(400, 'Invalid image');
+  if (reason === 'reference' ? paced(`${a.id}:ref`, 30000) : reason === 'periodic' ? paced(`${a.id}:frame`, 40000) : paced(`${a.id}:trigger`, 15000)) {
+    return res.json({ alerts: [], paced: true });
+  }
+  res.json(await proctor.checkFrame(a, jpeg, reason));
+});
+
+router.post('/proctor/event', (req, res) => {
+  const a = proctoredAttempt(req);
+  const kind = proctor.BROWSER_KINDS.includes(req.body.kind) ? req.body.kind : null;
+  if (!kind) fail(400, 'Unknown event');
+  if (!paced(`${a.id}:ev:${kind}`, 10000)) proctor.addEvent(a, 'browser', kind, v.str(req.body.detail, 'detail', { required: false, max: 200 }) || '');
+  res.json({ ok: true });
+});
+
+router.post('/proctor/audio', (req, res) => {
+  const a = proctoredAttempt(req);
+  const clip = b64(req.body.audio, 400000, 'recording');
+  if (!paced(`${a.id}:audio`, 45000)) proctor.saveAudio(a, clip);
+  res.json({ ok: true });
 });
 
 router.post('/submit', (req, res) => {

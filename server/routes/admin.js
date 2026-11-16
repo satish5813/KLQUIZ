@@ -11,6 +11,7 @@ const {
   sectionsWithPaper, finalize, finalizeExpired, rankings, bankStatus, pickQuestions,
 } = require('../exam');
 const { DEFAULT_INSTRUCTIONS, bankCode } = require('../seed');
+const proctor = require('../proctor');
 
 const router = express.Router();
 const SESSION_HOURS = 8;
@@ -247,6 +248,7 @@ router.put('/tests/:id', (req, res) => {
     mix_hard: v.int(b.mix_hard, 'Hard %', { min: 0, max: 100 }),
     selection_mode: b.selection_mode === 'fixed' ? 'fixed' : 'random',
     registration_mode: ['name_only', 'contact', 'application'].includes(b.registration_mode) ? b.registration_mode : 'full',
+    proctor_mode: b.proctor_mode === 'ai' ? 'ai' : 'offline',
     shuffle_questions: b.shuffle_questions ? 1 : 0,
     shuffle_options: b.shuffle_options ? 1 : 0,
     show_result: b.show_result ? 1 : 0,
@@ -563,6 +565,56 @@ router.post('/attempts/:id/submit', (req, res) => {
   res.json({ ok: true });
 });
 
+// ---------------- AI proctoring report ----------------
+const inr = (usd) => Math.round(usd * proctor.USD_INR * 100) / 100;
+const proctorSummary = (a) => ({
+  flags: a.proctor_flags, high: a.proctor_high, risk: proctor.risk(a),
+  ai_calls: a.ai_calls, tokens_in: a.ai_tokens_in, tokens_out: a.ai_tokens_out, cost_usd: a.ai_cost_usd, cost_inr: inr(a.ai_cost_usd),
+});
+
+router.get('/tests/:id/proctoring', (req, res) => {
+  const t = loadTest(req.params.id);
+  const rows = all(`SELECT a.*, s.full_name, s.email, s.mobile FROM attempts a JOIN students s ON s.id = a.student_id
+    WHERE a.test_id = ? ORDER BY a.proctor_high DESC, a.proctor_flags DESC, a.id`, t.id).map((a) => ({
+    attempt_id: a.id, full_name: a.full_name, contact: shownEmail(a.email) || a.mobile, status: a.status,
+    started_at: a.started_at, submitted_at: a.submitted_at, ...proctorSummary(a),
+  }));
+  const usd = rows.reduce((m, r) => m + r.cost_usd, 0);
+  res.json({
+    proctor_mode: t.proctor_mode, model: proctor.MODEL, usd_inr: proctor.USD_INR, ai: proctor.status(),
+    totals: {
+      candidates: rows.length, high: rows.filter((r) => r.risk === 'high').length, medium: rows.filter((r) => r.risk === 'medium').length,
+      ai_calls: rows.reduce((m, r) => m + r.ai_calls, 0), cost_usd: usd, cost_inr: inr(usd),
+      per_candidate_inr: rows.length ? inr(usd / rows.length) : 0,
+    },
+    rows,
+  });
+});
+
+router.get('/attempts/:id/proctor', (req, res) => {
+  const a = get('SELECT * FROM attempts WHERE id = ?', v.int(req.params.id, 'id', { min: 1 })) || fail(404, 'Attempt not found');
+  const s = get('SELECT full_name, email, mobile FROM students WHERE id = ?', a.student_id);
+  const t = get('SELECT name, exam_code FROM tests WHERE id = ?', a.test_id);
+  const events = all('SELECT id, at, source, kind, severity, detail, file FROM proctor_events WHERE attempt_id = ? ORDER BY id', a.id)
+    .map((e) => ({ ...e, label: (proctor.KINDS[e.kind] || [1, e.kind])[1], file: e.file ? (/\.(webm|m4a)$/.test(e.file) ? 'audio' : 'image') : null }));
+  res.json({
+    student: { full_name: s.full_name, contact: shownEmail(s.email) || s.mobile },
+    test: t,
+    attempt: { id: a.id, status: a.status, started_at: a.started_at, submitted_at: a.submitted_at, submit_reason: a.submit_reason, violations: a.violations, violation_log: JSON.parse(a.violation_log) },
+    summary: proctorSummary(a),
+    events,
+  });
+});
+
+// Evidence files are only reachable through the admin session (never public URLs).
+router.get('/proctor/file/:eventId', (req, res) => {
+  const e = get('SELECT file FROM proctor_events WHERE id = ?', v.int(req.params.eventId, 'id', { min: 1 }));
+  const abs = e && e.file && proctor.fileFor(e.file);
+  if (!abs) fail(404, 'File not found');
+  res.set('Cache-Control', 'private, max-age=3600');
+  res.sendFile(abs);
+});
+
 router.get('/tests/:id/results', (req, res) => {
   const t = loadTest(req.params.id);
   finalizeExpired(t.id);
@@ -628,6 +680,19 @@ router.get('/tests/:id/results.csv', (req, res) => {
   sendCsv(res, `${t.exam_code}_${t.name}_results.csv`,
     ['Rank', 'Name', 'Email', 'Mobile', 'Parent Mobile', 'Address', 'Score', 'Correct', 'Wrong', 'Unanswered', ...secs.map((s) => s.name), 'Time (min)', 'Violations', 'Submitted By', 'Submitted At'],
     rows);
+});
+
+router.get('/tests/:id/proctoring.csv', (req, res) => {
+  const t = loadTest(req.params.id);
+  const rows = all(`SELECT a.*, s.full_name, s.email, s.mobile FROM attempts a JOIN students s ON s.id = a.student_id WHERE a.test_id = ? ORDER BY a.id`, t.id)
+    .map((a) => {
+      const p = proctorSummary(a);
+      const kinds = all('SELECT kind, COUNT(*) c FROM proctor_events WHERE attempt_id = ? AND severity > 0 GROUP BY kind', a.id)
+        .map((k) => `${(proctor.KINDS[k.kind] || [1, k.kind])[1]} ×${k.c}`).join('; ');
+      return [a.id, a.full_name, shownEmail(a.email) || a.mobile, a.status, p.risk.toUpperCase(), p.flags, p.high, kinds, a.violations, p.ai_calls, p.cost_inr];
+    });
+  sendCsv(res, `${t.exam_code}_${t.name}_proctoring.csv`,
+    ['Attempt', 'Name', 'Contact', 'Status', 'Risk', 'Flags', 'Serious flags', 'Findings', 'Tab/screen violations', 'AI checks', 'AI cost (INR)'], rows);
 });
 
 router.get('/tests/:id/students.csv', (req, res) => {

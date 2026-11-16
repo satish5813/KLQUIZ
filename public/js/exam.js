@@ -37,10 +37,52 @@
     $('#startBtn').textContent = resuming ? 'Resume exam' : 'Start exam';
     if (resuming) $('#iNote').textContent = 'Your exam is in progress. The timer has kept running.';
     else if (t.state !== 'open') $('#iNote').textContent = 'The exam window is not open yet. Wait for the invigilator.';
-    $('#iAgree').addEventListener('change', () => { $('#startBtn').disabled = !$('#iAgree').checked; });
+    S.proctored = t.proctor_mode === 'ai';
+    if (S.proctored) $('#iMarks').textContent += ' · AI-proctored: camera and microphone stay on throughout';
+    $('#iAgree').addEventListener('change', updateStart);
+    if (S.proctored) setupProctor();
     $('#startBtn').addEventListener('click', start);
+    $('#procRetry').addEventListener('click', setupProctor);
     $('#logoutBtn').addEventListener('click', async () => { await api('/api/student/logout', { method: 'POST' }).catch(() => {}); location.href = '/'; });
     $('#instrView').classList.remove('hidden');
+  }
+
+  // ---------------- AI proctoring (online-from-home exams) ----------------
+  // The exam can start only after the camera, microphone, face and single-display checks pass.
+  let proctorOk = true;
+  function updateStart() { $('#startBtn').disabled = !$('#iAgree').checked || !proctorOk; }
+  const proctorApi = () => window.KLProctor || new Promise((r) => window.addEventListener('klproctor-ready', () => r(window.KLProctor), { once: true }));
+
+  async function setupProctor() {
+    proctorOk = false;
+    updateStart();
+    $('#procCard').classList.remove('hidden');
+    $('#procErr').classList.add('hidden');
+    $('#procRetry').classList.add('hidden');
+    $('#procHint').textContent = 'Starting camera…';
+    document.querySelectorAll('#procList li').forEach((li) => { li.className = ''; });
+    const P = await proctorApi();
+    const mark = (k, state) => { document.querySelector(`#procList [data-k=${k}]`).className = state; };
+    const r = await P.prepare($('#procVideo'), (x) => {
+      mark('camera', x.camera ? 'ok' : x.error ? 'bad' : '');
+      mark('mic', x.mic ? 'ok' : x.error ? 'bad' : '');
+      mark('screen', x.screen ? 'ok' : 'bad');
+      mark('face', x.face ? 'ok' : x.faces === undefined ? '' : 'wait');
+      $('#procHint').textContent = x.error ? 'Camera not available'
+        : x.face ? 'Camera ready' : x.faces === 0 ? 'Face not detected: sit in front of the camera'
+          : x.faces > 1 ? 'Only you should be in the camera view' : 'Checking…';
+    });
+    proctorOk = r.camera && r.mic && r.face && r.screen;
+    if (!proctorOk) {
+      mark('face', r.face ? 'ok' : 'bad');
+      $('#procErr').textContent = r.error
+        || (!r.mic ? 'Microphone not available. Allow microphone access and check again.'
+          : !r.screen ? 'A second display is connected. Disconnect it, then check again.'
+            : 'We could not see exactly one face. Sit facing the camera in good light, alone, and check again.');
+      $('#procErr').classList.remove('hidden');
+      $('#procRetry').classList.remove('hidden');
+    }
+    updateStart();
   }
 
   async function enterFullscreen() {
@@ -60,6 +102,7 @@
     try {
       await api('/api/student/start', { method: 'POST' });
       await loadPaper();
+      if (S.proctored && S.started) (await proctorApi()).begin();
     } catch (e) {
       btn.disabled = false;
       $('#iErr').textContent = e.message; $('#iErr').classList.remove('hidden');
@@ -285,6 +328,7 @@
     o.classList.remove('hidden');
     await flush();
     S.done = true;
+    if (window.KLProctor) window.KLProctor.stop();
     for (let i = 0; i < 5; i++) {
       try {
         if (why !== 'violations') await api('/api/student/submit', { method: 'POST' });

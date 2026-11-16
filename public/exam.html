@@ -13,11 +13,12 @@
 <body>
   <!-- Instructions -->
   <div id="instrView" class="hidden">
-    <header class="topbar">
-      <img src="/img/klu-logo.webp" alt="KL University" class="logo">
+    <header class="topbar brand">
+      <a class="campus campus-l" href="/" aria-label="KL University, Hyderabad"><img src="/img/klh-logo.png" alt="KL University, Hyderabad" class="logo"><span>Hyderabad</span></a>
       <div class="title" id="iTitle">Examination<small>KL Admissions Entrance Examinations 2027</small></div>
       <div class="spacer"></div>
       <button class="btn secondary sm" id="logoutBtn" type="button">Logout</button>
+      <span class="campus campus-r"><img src="/img/klu-logo.webp" alt="KL University, Vijayawada" class="logo"><span>Vijayawada</span></span>
     </header>
     <main class="container">
       <div id="iErr" class="alert error hidden"></div>
@@ -30,6 +31,29 @@
           <h3>Exam pattern</h3>
           <div class="table-wrap"><table class="table"><thead><tr><th>Section</th><th>Questions</th></tr></thead><tbody id="iSecs"></tbody></table></div>
           <p class="small muted" id="iMarks"></p>
+        </div>
+      </div>
+      <div class="card proctor-card hidden" id="procCard">
+        <div class="card-title"><h3>AI-proctored online exam — system check</h3><span class="badge red">Camera &amp; microphone on</span></div>
+        <div class="proc-check">
+          <div class="proc-cam"><video id="procVideo" autoplay muted playsinline></video><div class="proc-cam-hint" id="procHint">Starting camera…</div></div>
+          <div>
+            <ul class="checklist" id="procList">
+              <li data-k="camera">Camera</li>
+              <li data-k="mic">Microphone</li>
+              <li data-k="face">Your face is visible (only you)</li>
+              <li data-k="screen">Only one display connected</li>
+            </ul>
+            <div id="procErr" class="alert error hidden"></div>
+            <button class="btn secondary sm hidden" id="procRetry" type="button">Check again</button>
+            <ol class="proc-rules">
+              <li>Sit alone in a quiet, well-lit room. Keep your face in the camera view for the whole exam.</li>
+              <li>No mobile phones, earphones, books, notes, other screens or other people near you.</li>
+              <li>Do not talk, read aloud or turn away from the screen for long.</li>
+              <li>Your camera, microphone and screen are monitored by AI throughout. Photos and short sound recordings of any suspicious moment are saved and reviewed by the examiner.</li>
+              <li>Do not switch off or cover the camera. The exam pauses until it is back on.</li>
+            </ol>
+          </div>
         </div>
       </div>
       <div class="card">
@@ -47,7 +71,7 @@
   <!-- Exam -->
   <div id="examView" class="hidden">
     <header class="exam-top">
-      <img src="/img/klu-logo.webp" alt="KL University" class="logo">
+      <img src="/img/klh-logo.png" alt="KL University, Hyderabad" class="logo">
       <div class="t" id="eTitle"></div>
       <div class="spacer grow"></div>
       <div class="cand" id="eCand"></div>
@@ -57,6 +81,7 @@
       </div>
       <button class="btn green sm submit-top" id="submitTopBtn" type="button">Submit</button>
       <button class="btn secondary sm palette-toggle" id="palBtn" type="button">☰</button>
+      <img src="/img/klu-logo.webp" alt="KL University, Vijayawada" class="logo logo-r">
     </header>
     <nav class="sec-tabs" id="secTabs"></nav>
     <div class="exam-body">
@@ -98,6 +123,17 @@
     </div>
   </div>
 
+  <!-- AI proctoring during the exam -->
+  <div class="proc-pip hidden" id="procPip" aria-label="Your camera"><span class="proc-dot" id="procDot"></span></div>
+  <div class="proc-alert hidden" id="procAlert" role="alert"></div>
+  <div class="overlay hidden" id="camOverlay">
+    <div class="box">
+      <h2>⚠ Camera or microphone off</h2>
+      <p id="camMsg"></p>
+      <button class="btn lg" id="camRetry" type="button">Turn camera back on</button>
+    </div>
+  </div>
+
   <div class="overlay hidden" id="fsOverlay">
     <div class="box">
       <h2>⚠ You left full-screen mode</h2>
@@ -112,6 +148,7 @@
   <script src="/vendor/smiles-drawer/smiles-drawer.min.js"></script>
   <script src="/js/common.js"></script>
   <script src="/js/render.js"></script>
+  <script type="module" src="/js/proctor.js"></script>
   <script src="/js/exam.js"></script>
 </body>
 </html>
