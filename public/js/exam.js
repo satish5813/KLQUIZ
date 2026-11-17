@@ -37,8 +37,8 @@
     $('#startBtn').textContent = resuming ? 'Resume exam' : 'Start exam';
     if (resuming) $('#iNote').textContent = 'Your exam is in progress. The timer has kept running.';
     else if (t.state !== 'open') $('#iNote').textContent = 'The exam window is not open yet. Wait for the invigilator.';
-    S.proctored = t.proctor_mode === 'ai';
-    if (S.proctored) $('#iMarks').textContent += ' · AI-proctored: camera and microphone stay on throughout';
+    S.proctored = t.proctor_mode === 'ai' || t.proctor_mode === 'browser';
+    if (S.proctored) $('#iMarks').textContent += ' · Proctored online: camera and microphone stay on throughout';
     $('#iAgree').addEventListener('change', updateStart);
     if (S.proctored) setupProctor();
     $('#startBtn').addEventListener('click', start);

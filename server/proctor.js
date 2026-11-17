@@ -44,6 +44,7 @@ const KINDS = {
   ai_away: [1, 'AI: looking away from the screen'],
   // information
   reference: [0, 'Reference photo at the start of the exam'],
+  snapshot: [0, 'Routine photo'],
 };
 const BROWSER_KINDS = Object.keys(KINDS).filter((k) => !k.startsWith('ai_') && k !== 'reference');
 
@@ -67,6 +68,9 @@ const PROMPT = 'Webcam frame of a student taking an online exam alone at home. A
   + 'visible; earphones = earphones/headset/earbuds worn; material = book, notes or written paper visible.';
 
 let inFlight = 0;
+// Routine photos: one kept every 5 minutes per attempt, so the examiner can see the whole exam, not only incidents.
+const SNAPSHOT_MS = 5 * 60000;
+const lastSnapshot = new Map(); // attempt id -> time (ms)
 // Last Gemini failure (e.g. credits used up), shown to the admin; logged at most once a minute.
 const health = { lastError: null, lastErrorAt: 0, lastOkAt: 0, loggedAt: 0 };
 
@@ -141,8 +145,9 @@ function findings(v) {
 }
 
 // One camera frame from the candidate. reason: 'periodic' (once a minute), a browser finding (sent at once), or
-// 'reference' (start of the exam, kept for identity checks, not analysed).
-async function checkFrame(attempt, jpeg, reason) {
+// 'reference' (start of the exam, kept for identity checks, not analysed). mode: 'ai' asks Gemini about the frame;
+// 'browser' (no API key needed) relies on the browser's own detection and only keeps the evidence.
+async function checkFrame(attempt, jpeg, reason, mode = 'ai') {
   if (reason === 'reference') {
     addEvent(attempt, 'system', 'reference', '', saveFile(attempt, 'reference', 'jpg', jpeg));
     return { alerts: [] };
@@ -151,6 +156,12 @@ async function checkFrame(attempt, jpeg, reason) {
   // The browser already decided this moment is suspicious: keep the frame as evidence whatever Gemini says.
   const triggerFile = trigger ? saveFile(attempt, trigger, 'jpg', jpeg) : null;
   if (trigger) addEvent(attempt, 'browser', trigger, '', triggerFile);
+  if (reason === 'periodic' && Date.now() - (lastSnapshot.get(attempt.id) || 0) >= SNAPSHOT_MS) {
+    lastSnapshot.set(attempt.id, Date.now());
+    if (lastSnapshot.size > 50000) lastSnapshot.clear();
+    addEvent(attempt, 'system', 'snapshot', '', saveFile(attempt, 'snapshot', 'jpg', jpeg));
+  }
+  if (mode !== 'ai') return { alerts: [] };
 
   if (inFlight >= MAX_IN_FLIGHT && !trigger) return { alerts: [], skipped: true };
   inFlight++;

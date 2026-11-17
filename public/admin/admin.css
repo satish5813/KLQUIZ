@@ -109,3 +109,6 @@
   .modal-foot, .modal-head .x { display: none !important; }
   .proc-ev { break-inside: avoid; }
 }
+.proc-gallery { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 8px; }
+.proc-gallery figure { margin: 0; }
+.proc-gallery .proc-shot { width: 150px; }

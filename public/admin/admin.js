@@ -339,7 +339,8 @@
       ]),
       proctor_mode: el('select', [
         el('option', { value: 'offline', text: 'Offline — exam hall with invigilators (no camera)', selected: t.proctor_mode !== 'ai' }),
-        el('option', { value: 'ai', text: 'Online from home — AI video proctoring (camera + microphone)', selected: t.proctor_mode === 'ai' }),
+        el('option', { value: 'browser', text: 'Online from home — video proctoring in the browser (no AI cost)', selected: t.proctor_mode === 'browser' }),
+        el('option', { value: 'ai', text: 'Online from home — video proctoring + Gemini AI photo check every 60 s', selected: t.proctor_mode === 'ai' }),
       ]),
       selection_mode: el('select', { disabled: t.locked }, [
         el('option', { value: 'random', text: 'Random set for every student (same difficulty mix)', selected: t.selection_mode === 'random' }),
@@ -417,7 +418,7 @@
         ]),
         el('div.grid-2', [
           field('Registration form', f.registration_mode, 'Name only: candidates type just their name (then the pass key). Use for trials; real exams need full details.'),
-          field('Exam mode', f.proctor_mode, 'AI proctoring: candidates must pass a camera, microphone and face check; the browser watches continuously and Gemini 3.1 Flash-Lite checks a photo every 60 s.'),
+          field('Exam mode', f.proctor_mode, 'Online modes: candidates must pass a camera, microphone and face check. The browser watches continuously (face, people, head turned, phone, book, other screen, talking) and keeps photos and recordings as evidence. The Gemini option also checks a photo every 60 s (needs a Gemini API key with credit).'),
         ]),
         el('div.row', [
           el('label.check', [f.shuffle_questions, 'Shuffle question order per student']),
@@ -828,11 +829,11 @@
 
   async function tabProctoring(t, body) {
     const r = await api('/api/admin/tests/' + t.id + '/proctoring');
-    if (r.proctor_mode !== 'ai') {
-      body.append(el('div.alert.warn', { text: 'This exam is in Offline (exam hall) mode. Switch "Exam mode" to "Online from home — AI video proctoring" in Setup to proctor candidates by camera.' }));
+    if (r.proctor_mode === 'offline') {
+      body.append(el('div.alert.warn', { text: 'This exam is in Offline (exam hall) mode. Choose an "Online from home" Exam mode in Setup to proctor candidates by camera.' }));
       if (!r.rows.length) return;
     }
-    if (r.ai.failing) {
+    if (r.proctor_mode === 'ai' && r.ai.failing) {
       body.append(el('div.alert.error', { text: 'AI checks are failing right now, so only the browser findings are being recorded. Gemini says: ' + r.ai.error + ' (Check the Gemini API key and billing in Google AI Studio.)' }));
     }
     const filter = el('select', [['', 'All candidates'], ['high', 'High risk'], ['medium', 'Medium risk'], ['flagged', 'Any finding']].map(([v, l]) => el('option', { value: v, text: l })));
@@ -864,7 +865,7 @@
           el('button.btn.secondary.sm', { type: 'button', text: '⟳ Refresh', onclick: route }),
           el('a.btn.sm', { href: '/api/admin/tests/' + t.id + '/proctoring.csv', text: '⬇ Export CSV' }),
         ])]),
-        el('p.small.muted', { text: 'Model ' + r.model + ': one check every 60 s, plus one at once for every browser finding. High risk = another person, a phone or another screen confirmed by the AI, or 3+ serious browser findings. Findings are evidence for review; the proctor never submits an exam. Cost at $1 = ₹' + r.usd_inr + '.' }),
+        el('p.small.muted', { text: (r.proctor_mode === 'browser' ? 'Browser proctoring (no AI cost): findings come from the candidate\'s browser, each with a photo or a 10-second recording; a routine photo is kept every 5 minutes.' : 'Model ' + r.model + ': one check every 60 s, plus one at once for every browser finding.') + ' High risk = another person, a phone or another screen confirmed by the AI, or 3+ serious browser findings. Findings are evidence for review; the proctor never submits an exam. Cost at $1 = ₹' + r.usd_inr + '.' }),
         r.rows.length ? el('div.table-wrap', el('table.table', [
           el('thead', el('tr', ['Candidate', 'Status', 'Risk', 'Findings', 'Serious', 'AI checks', 'AI cost', ''].map((h) => el('th', { text: h })))),
           tbody,
@@ -882,7 +883,8 @@
       ? el('a', { href: fileUrl(e), target: '_blank', rel: 'noopener' }, el('img.proc-shot', { src: fileUrl(e), alt: e.label, loading: 'lazy' }))
       : e.file === 'audio' ? el('audio', { controls: true, preload: 'none', src: fileUrl(e) }) : null);
     const ref = d.events.find((e) => e.kind === 'reference');
-    const events = d.events.filter((e) => e.kind !== 'reference');
+    const routine = d.events.filter((e) => e.kind === 'snapshot');
+    const events = d.events.filter((e) => e.kind !== 'reference' && e.kind !== 'snapshot');
     const a = d.attempt;
     modal({
       title: 'Proctoring report — ' + d.student.full_name,
@@ -897,6 +899,8 @@
           el('p.small.muted', { text: d.test.exam_code + ' · ' + d.test.name + ' · ' + d.student.contact + ' · started ' + fmtDate(a.started_at)
             + (a.submitted_at ? ' · submitted ' + fmtDate(a.submitted_at) + ' (' + a.submit_reason + ')' : ' · in progress') }),
           ref ? el('div.mb', [el('div.small.muted', { text: 'Reference photo (start of exam)' }), evidence(ref)]) : null,
+          routine.length ? el('details.mb', [el('summary', { text: 'Routine photos every 5 minutes (' + routine.length + ')' }),
+            el('div.proc-gallery', routine.map((e) => el('figure', [evidence(e), el('figcaption.small.muted', { text: new Date(e.at).toLocaleTimeString() })])))]) : null,
           events.length ? el('div.proc-timeline', events.map((e) => el('div.proc-ev.sev' + e.severity, [
             el('div.small', [el('b', { text: new Date(e.at).toLocaleTimeString() }), el('div.muted', { text: e.source === 'ai' ? 'Gemini' : 'Browser' })]),
             el('div', [
