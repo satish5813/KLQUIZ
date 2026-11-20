@@ -180,6 +180,10 @@ async function checkFrame(attempt, jpeg, reason, mode = 'ai') {
   const c = cost(r.tokIn, r.tokOut);
   run('UPDATE attempts SET ai_calls = ai_calls + 1, ai_tokens_in = ai_tokens_in + ?, ai_tokens_out = ai_tokens_out + ?, ai_cost_usd = ai_cost_usd + ? WHERE id = ?',
     r.tokIn, r.tokOut, c, attempt.id);
+  const who = get('SELECT full_name FROM students WHERE id = ?', attempt.student_id);
+  run(`INSERT INTO ai_usage (at, test_id, attempt_id, student_id, student_name, model, reason, tokens_in, tokens_out, cost_usd)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, new Date().toISOString(), attempt.test_id, attempt.id, attempt.student_id,
+  who ? who.full_name : '', MODEL, trigger || reason, r.tokIn, r.tokOut, c);
   const found = findings(r.verdict);
   if (found.length) {
     const file = triggerFile || saveFile(attempt, found[0], 'jpg', jpeg);

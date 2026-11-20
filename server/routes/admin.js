@@ -585,10 +585,36 @@ router.get('/tests/:id/proctoring', (req, res) => {
     totals: {
       candidates: rows.length, high: rows.filter((r) => r.risk === 'high').length, medium: rows.filter((r) => r.risk === 'medium').length,
       ai_calls: rows.reduce((m, r) => m + r.ai_calls, 0), cost_usd: usd, cost_inr: inr(usd),
+      tokens_in: rows.reduce((m, r) => m + r.tokens_in, 0), tokens_out: rows.reduce((m, r) => m + r.tokens_out, 0),
       per_candidate_inr: rows.length ? inr(usd / rows.length) : 0,
     },
     rows,
   });
+});
+
+// AI usage ledger: everything spent on Gemini proctoring, per exam and per day (IST).
+router.get('/ai-usage', (req, res) => {
+  const rate = proctor.USD_INR;
+  const perTest = all(`SELECT u.test_id, t.name, t.exam_code, COUNT(DISTINCT u.attempt_id) students, COUNT(*) calls,
+      SUM(u.tokens_in) tokens_in, SUM(u.tokens_out) tokens_out, SUM(u.cost_usd) cost_usd, MIN(u.at) first_at, MAX(u.at) last_at
+    FROM ai_usage u LEFT JOIN tests t ON t.id = u.test_id GROUP BY u.test_id ORDER BY MAX(u.at) DESC`)
+    .map((r) => ({ ...r, cost_inr: inr(r.cost_usd), per_student_inr: r.students ? inr(r.cost_usd / r.students) : 0,
+      per_call_tokens: r.calls ? Math.round((r.tokens_in + r.tokens_out) / r.calls) : 0 }));
+  const perDay = all(`SELECT date(u.at, '+330 minutes') day, COUNT(DISTINCT u.attempt_id) students, COUNT(*) calls,
+      SUM(u.tokens_in) tokens_in, SUM(u.tokens_out) tokens_out, SUM(u.cost_usd) cost_usd FROM ai_usage u GROUP BY day ORDER BY day DESC`)
+    .map((r) => ({ ...r, cost_inr: inr(r.cost_usd) }));
+  const tot = get('SELECT COUNT(*) calls, COALESCE(SUM(tokens_in), 0) tokens_in, COALESCE(SUM(tokens_out), 0) tokens_out, COALESCE(SUM(cost_usd), 0) cost_usd FROM ai_usage');
+  res.json({ model: proctor.MODEL, usd_inr: rate, totals: { ...tot, cost_inr: inr(tot.cost_usd) }, per_test: perTest, per_day: perDay });
+});
+
+// Per-student ledger for one exam (CSV), including students whose attempt was later reset.
+router.get('/tests/:id/ai-usage.csv', (req, res) => {
+  const t = loadTest(req.params.id);
+  const rows = all(`SELECT attempt_id, student_name, COUNT(*) calls, SUM(tokens_in) tin, SUM(tokens_out) tout, SUM(cost_usd) usd,
+      MIN(at) first_at, MAX(at) last_at FROM ai_usage WHERE test_id = ? GROUP BY attempt_id ORDER BY attempt_id`, t.id)
+    .map((r) => [r.attempt_id, r.student_name, r.calls, r.tin, r.tout, r.tin + r.tout, r.usd.toFixed(6), inr(r.usd), r.first_at, r.last_at]);
+  sendCsv(res, `${t.exam_code}_${t.name}_ai_usage.csv`,
+    ['Attempt', 'Student', 'AI checks', 'Input tokens', 'Output tokens', 'Total tokens', 'Cost (USD)', 'Cost (INR)', 'First check', 'Last check'], rows);
 });
 
 router.get('/attempts/:id/proctor', (req, res) => {

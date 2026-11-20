@@ -39,7 +39,7 @@
     document.querySelectorAll('[data-nav]').forEach((a) => a.classList.toggle('active', a.dataset.nav === parts[0]));
     $('#sidebar').classList.remove('open');
     clear(view).appendChild(el('div.row', [el('span.spinner.dark'), el('span.muted', { text: 'Loading…' })]));
-    const pages = { dashboard, patterns, tests, test: testDetail, bank, settings };
+    const pages = { dashboard, patterns, tests, test: testDetail, bank, settings, usage };
     handle(pages[parts[0]] || dashboard)(...parts.slice(1));
   }
 
@@ -826,6 +826,44 @@
   // ----- AI proctoring -----
   const riskBadge = (r) => el('span.badge.' + (r === 'high' ? 'red' : r === 'medium' ? 'pending' : 'approved'), { text: r.toUpperCase() });
   const rupees = (n) => '₹' + Number(n || 0).toFixed(2);
+  const num = (n) => Number(n || 0).toLocaleString('en-IN');
+
+  // ----- AI usage & cost ledger (all exams) -----
+  async function usage() {
+    const r = await api('/api/admin/ai-usage');
+    const tt = r.totals;
+    clear(view).append(
+      pageHead('AI Usage & Cost', 'Every Gemini proctoring check is recorded here with its tokens and cost, and kept even if an attempt is reset. Model ' + r.model + ', $1 = ₹' + r.usd_inr + '.',
+        [el('button.btn.secondary.sm', { type: 'button', text: '⟳ Refresh', onclick: route })]),
+      el('div.stat-grid.mb', [
+        stat(rupees(tt.cost_inr), 'Total AI cost', 'green'), stat(num(tt.calls), 'AI checks', ''),
+        stat(num(tt.tokens_in), 'Input tokens', ''), stat(num(tt.tokens_out), 'Output tokens', ''),
+      ]),
+      el('div.card', [
+        el('h3', { text: 'By exam' }),
+        r.per_test.length ? el('div.table-wrap', el('table.table', [
+          el('thead', el('tr', ['Exam', 'Students', 'AI checks', 'Input tokens', 'Output tokens', 'Tokens / check', 'Cost', 'Per student', ''].map((h) => el('th', { text: h })))),
+          el('tbody', r.per_test.map((x) => el('tr', [
+            el('td', [el('b', { text: x.name || ('Exam #' + x.test_id) }), el('div.small.muted', { text: (x.exam_code || '') + ' · ' + fmtDate(x.first_at) + ' – ' + fmtDate(x.last_at) })]),
+            el('td', { text: x.students }), el('td', { text: num(x.calls) }), el('td', { text: num(x.tokens_in) }), el('td', { text: num(x.tokens_out) }),
+            el('td', { text: x.per_call_tokens }), el('td', el('b', { text: rupees(x.cost_inr) })), el('td', { text: rupees(x.per_student_inr) }),
+            el('td', el('div.row', [
+              el('a.btn.secondary.sm', { href: '#/test/' + x.test_id + '/proctoring', text: 'Students' }),
+              el('a.btn.secondary.sm', { href: '/api/admin/tests/' + x.test_id + '/ai-usage.csv', text: '⬇ CSV' }),
+            ])),
+          ]))),
+        ])) : el('p.muted', { text: 'No AI checks yet. Costs appear here as soon as an AI-proctored exam is written.' }),
+      ]),
+      el('div.card', [
+        el('h3', { text: 'By day (IST)' }),
+        r.per_day.length ? el('div.table-wrap', el('table.table', [
+          el('thead', el('tr', ['Day', 'Students', 'AI checks', 'Input tokens', 'Output tokens', 'Cost'].map((h) => el('th', { text: h })))),
+          el('tbody', r.per_day.map((x) => el('tr', [el('td', { text: x.day }), el('td', { text: x.students }), el('td', { text: num(x.calls) }),
+            el('td', { text: num(x.tokens_in) }), el('td', { text: num(x.tokens_out) }), el('td', el('b', { text: rupees(x.cost_inr) }))]))),
+        ])) : el('p.muted', { text: '—' }),
+      ]),
+    );
+  }
 
   async function tabProctoring(t, body) {
     const r = await api('/api/admin/tests/' + t.id + '/proctoring');
@@ -847,6 +885,7 @@
         el('td', { text: x.flags }),
         el('td', { text: x.high }),
         el('td', { text: x.ai_calls }),
+        el('td.small', { text: num(x.tokens_in) + ' / ' + num(x.tokens_out) }),
         el('td', { text: rupees(x.cost_inr) }),
         el('td', el('button.btn.secondary.sm', { type: 'button', text: 'Report', onclick: handle(() => proctorReport(x.attempt_id)) })),
       ])));
@@ -858,16 +897,18 @@
       el('div.stat-grid.mb', [
         stat(tt.candidates, 'Candidates proctored', ''), stat(tt.high, 'High risk', 'red'), stat(tt.medium, 'Medium risk', ''),
         stat(rupees(tt.cost_inr), 'AI cost (' + tt.ai_calls + ' checks)', ''), stat(rupees(tt.per_candidate_inr), 'AI cost per candidate', 'green'),
+        stat(num(tt.tokens_in + tt.tokens_out), 'Tokens (' + num(tt.tokens_in) + ' in / ' + num(tt.tokens_out) + ' out)', ''),
       ]),
       el('div.card', [
         el('div.card-title', [el('h3', { text: 'Proctoring report' }), el('div.row', [
           filter,
           el('button.btn.secondary.sm', { type: 'button', text: '⟳ Refresh', onclick: route }),
           el('a.btn.sm', { href: '/api/admin/tests/' + t.id + '/proctoring.csv', text: '⬇ Export CSV' }),
+          el('a.btn.secondary.sm', { href: '/api/admin/tests/' + t.id + '/ai-usage.csv', text: '⬇ Tokens & cost CSV' }),
         ])]),
         el('p.small.muted', { text: (r.proctor_mode === 'browser' ? 'Browser proctoring (no AI cost): findings come from the candidate\'s browser, each with a photo or a 10-second recording; a routine photo is kept every 5 minutes.' : 'Model ' + r.model + ': one check every 60 s, plus one at once for every browser finding.') + ' High risk = another person, a phone or another screen confirmed by the AI, or 3+ serious browser findings. Findings are evidence for review; the proctor never submits an exam. Cost at $1 = ₹' + r.usd_inr + '.' }),
         r.rows.length ? el('div.table-wrap', el('table.table', [
-          el('thead', el('tr', ['Candidate', 'Status', 'Risk', 'Findings', 'Serious', 'AI checks', 'AI cost', ''].map((h) => el('th', { text: h })))),
+          el('thead', el('tr', ['Candidate', 'Status', 'Risk', 'Findings', 'Serious', 'AI checks', 'Tokens in / out', 'AI cost', ''].map((h) => el('th', { text: h })))),
           tbody,
         ])) : el('p.muted', { text: 'No candidates yet.' }),
       ]),

@@ -184,6 +184,24 @@ db.exec(`CREATE TABLE IF NOT EXISTS proctor_events (
 );
 CREATE INDEX IF NOT EXISTS idx_pe_attempt ON proctor_events(attempt_id, id);`);
 
+// AI usage ledger: one row per Gemini proctoring call. No foreign keys on purpose: the record of what was spent
+// stays even if a student or attempt is deleted later.
+db.exec(`CREATE TABLE IF NOT EXISTS ai_usage (
+  id INTEGER PRIMARY KEY,
+  at TEXT NOT NULL,
+  test_id INTEGER NOT NULL,
+  attempt_id INTEGER NOT NULL,
+  student_id INTEGER NOT NULL,
+  student_name TEXT NOT NULL DEFAULT '',
+  model TEXT NOT NULL,
+  reason TEXT NOT NULL,
+  tokens_in INTEGER NOT NULL,
+  tokens_out INTEGER NOT NULL,
+  cost_usd REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_ai_usage_test ON ai_usage(test_id, attempt_id);
+CREATE INDEX IF NOT EXISTS idx_ai_usage_at ON ai_usage(at);`);
+
 // Questions served to each attempt (needed when every student gets a different random set).
 db.exec(`CREATE TABLE IF NOT EXISTS attempt_questions (
   attempt_id INTEGER NOT NULL REFERENCES attempts(id) ON DELETE CASCADE,
