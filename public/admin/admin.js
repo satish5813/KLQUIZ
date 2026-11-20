@@ -1021,10 +1021,11 @@
     const s = await api('/api/admin/settings');
     const key = el('input', { type: 'password', placeholder: s.gemini_configured ? `Current key ${s.gemini_key_hint} (${s.gemini_key_source})` : 'Paste your Gemini API key', autocomplete: 'off' });
     const model = el('input', { type: 'text', value: s.gemini_model, maxlength: 80 });
+    const rate = el('input', { type: 'number', value: s.usd_inr, min: 1, max: 1000, step: '0.01' });
     const save = el('button.btn', { type: 'button', text: 'Save' });
     const test = el('button.btn.purple', { type: 'button', text: 'Test connection' });
     save.addEventListener('click', handle(() => withBusy(save, async () => {
-      const body = { gemini_model: model.value };
+      const body = { gemini_model: model.value, usd_inr: Number(rate.value) };
       if (key.value) body.gemini_key = key.value;
       await api('/api/admin/settings', { method: 'PUT', body });
       toast('Settings saved', 'success'); route();
@@ -1048,7 +1049,7 @@
         el('h3', { text: 'Google Gemini' }),
         el('p.small.muted', ['Get a key from ', el('a', { href: 'https://aistudio.google.com/apikey', target: '_blank', rel: 'noopener', text: 'Google AI Studio' }), '. It is stored encrypted on the server and never sent to browsers.']),
         el('div', { text: s.gemini_configured ? `Status: configured (${s.gemini_key_hint}, from ${s.gemini_key_source === 'env' ? '.env file' : 'admin settings'})` : 'Status: not configured', class: s.gemini_configured ? 'alert success' : 'alert warn' }),
-        el('div.grid-2', [field('API key', key, 'Leave blank to keep the current key'), field('Model', model, 'e.g. gemini-3.8-flash or gemini-3.1-pro-preview')]),
+        el('div.grid-3', [field('API key', key, 'Leave blank to keep the current key'), field('Model', model, 'e.g. gemini-3.8-flash or gemini-3.1-pro-preview'), field('Dollar rate (₹ per $1)', rate, 'Used for every rupee figure in AI Usage & Cost and proctoring reports')]),
         el('div.row', [save, test, s.gemini_key_source === 'admin' ? el('button.btn.danger', { type: 'button', text: 'Remove stored key', onclick: handle(async () => {
           await api('/api/admin/settings', { method: 'PUT', body: { gemini_key: '' } }); route();
         }) }) : null]),

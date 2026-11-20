@@ -87,6 +87,7 @@ router.get('/settings', (req, res) => {
     gemini_key_source: stored ? 'admin' : (process.env.GEMINI_API_KEY ? 'env' : 'none'),
     gemini_key_hint: key ? `••••${key.slice(-4)}` : '',
     gemini_model: model,
+    usd_inr: proctor.usdInr(),
   });
 });
 
@@ -100,6 +101,10 @@ router.put('/settings', (req, res) => {
     } else {
       run("DELETE FROM settings WHERE key = 'gemini_key'");
     }
+  }
+  if (req.body.usd_inr !== undefined && req.body.usd_inr !== '') {
+    const r = v.num(req.body.usd_inr, 'Dollar rate', { min: 1, max: 1000 });
+    run("INSERT INTO settings (key, value) VALUES ('usd_inr', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value", String(r));
   }
   if (req.body.gemini_model) {
     const m = v.str(req.body.gemini_model, 'Model', { max: 80 });
@@ -566,7 +571,7 @@ router.post('/attempts/:id/submit', (req, res) => {
 });
 
 // ---------------- AI proctoring report ----------------
-const inr = (usd) => Math.round(usd * proctor.USD_INR * 100) / 100;
+const inr = (usd) => Math.round(usd * proctor.usdInr() * 100) / 100;
 const proctorSummary = (a) => ({
   flags: a.proctor_flags, high: a.proctor_high, risk: proctor.risk(a),
   ai_calls: a.ai_calls, tokens_in: a.ai_tokens_in, tokens_out: a.ai_tokens_out, cost_usd: a.ai_cost_usd, cost_inr: inr(a.ai_cost_usd),
@@ -581,7 +586,7 @@ router.get('/tests/:id/proctoring', (req, res) => {
   }));
   const usd = rows.reduce((m, r) => m + r.cost_usd, 0);
   res.json({
-    proctor_mode: t.proctor_mode, model: proctor.MODEL, usd_inr: proctor.USD_INR, ai: proctor.status(),
+    proctor_mode: t.proctor_mode, model: proctor.MODEL, usd_inr: proctor.usdInr(), ai: proctor.status(),
     totals: {
       candidates: rows.length, high: rows.filter((r) => r.risk === 'high').length, medium: rows.filter((r) => r.risk === 'medium').length,
       ai_calls: rows.reduce((m, r) => m + r.ai_calls, 0), cost_usd: usd, cost_inr: inr(usd),
@@ -594,7 +599,7 @@ router.get('/tests/:id/proctoring', (req, res) => {
 
 // AI usage ledger: everything spent on Gemini proctoring, per exam and per day (IST).
 router.get('/ai-usage', (req, res) => {
-  const rate = proctor.USD_INR;
+  const rate = proctor.usdInr();
   const perTest = all(`SELECT u.test_id, t.name, t.exam_code, COUNT(DISTINCT u.attempt_id) students, COUNT(*) calls,
       SUM(u.tokens_in) tokens_in, SUM(u.tokens_out) tokens_out, SUM(u.cost_usd) cost_usd, MIN(u.at) first_at, MAX(u.at) last_at
     FROM ai_usage u LEFT JOIN tests t ON t.id = u.test_id GROUP BY u.test_id ORDER BY MAX(u.at) DESC`)

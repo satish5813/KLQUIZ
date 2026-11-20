@@ -16,7 +16,11 @@ const MODEL = process.env.PROCTOR_MODEL || 'gemini-3.1-flash-lite';
 // USD per million tokens (Gemini 3.1 Flash-Lite list price); thinking tokens are billed as output.
 const PRICE_IN = Number(process.env.PROCTOR_PRICE_IN) || 0.25;
 const PRICE_OUT = Number(process.env.PROCTOR_PRICE_OUT) || 1.5;
-const USD_INR = Number(process.env.USD_INR) || 94.56;
+// Rupees per US dollar for reports: Admin → Settings, else USD_INR, else the rate on 20 Nov 2026.
+const usdInr = () => {
+  const row = get("SELECT value FROM settings WHERE key = 'usd_inr'");
+  return Number(row && row.value) || Number(process.env.USD_INR) || 93.32;
+};
 // At most this many Gemini calls at once; a routine check is skipped (not queued) when the server is that busy.
 const MAX_IN_FLIGHT = Number(process.env.PROCTOR_MAX_IN_FLIGHT) || 64;
 
@@ -215,4 +219,4 @@ function status() {
   return { failing, error: failing ? health.lastError : null, last_ok_at: health.lastOkAt ? new Date(health.lastOkAt).toISOString() : null };
 }
 
-module.exports = { status, KINDS, BROWSER_KINDS, MODEL, USD_INR, checkFrame, saveAudio, addEvent, fileFor, risk, cost, askGemini, findings };
+module.exports = { status, KINDS, BROWSER_KINDS, MODEL, usdInr, checkFrame, saveAudio, addEvent, fileFor, risk, cost, askGemini, findings };
