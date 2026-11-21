@@ -85,7 +85,8 @@ spec:
   selector: {app: klquiz-live}
   ports: [{name: http, port: 80, targetPort: http}]
 ---
-# Traefik -> live monitor; DNS; and the Kubernetes API (metrics) only.
+# Traefik -> live monitor; DNS; and the Kubernetes API (metrics) only: its service IP and the API server endpoint
+# (kubectl get endpoints kubernetes = 172.16.0.1:6443 on this cluster).
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -101,5 +102,5 @@ spec:
   egress:
     - to: [{namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: kube-system}}}]
       ports: [{port: 53, protocol: UDP}, {port: 53, protocol: TCP}]
-    - to: [{ipBlock: {cidr: 10.43.0.1/32}}, {ipBlock: {cidr: 10.5.1.5/32}}]
+    - to: [{ipBlock: {cidr: 10.43.0.1/32}}, {ipBlock: {cidr: 172.16.0.1/32}}]
       ports: [{port: 443}, {port: 6443}]
