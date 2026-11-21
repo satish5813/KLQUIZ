@@ -6,6 +6,7 @@ namespace: klquiz-prod
 resources:
   - namespace.yaml
   - ../../base
+  - ../../live
   - backup.yaml
 images:
   - name: ghcr.io/satish5813/klquiz
@@ -17,6 +18,19 @@ configMapGenerator:
       - backup-encrypt.js
       - restore-test.sh
 patches:
+  - target: {kind: Ingress, name: klquiz}
+    patch: |
+      - op: add
+        path: /spec/rules/0/http/paths/0
+        value: {path: /live, pathType: Prefix, backend: {service: {name: live, port: {name: http}}}}
+  - target: {kind: ClusterRole, name: klquiz-live-metrics}
+    patch: |
+      - {op: replace, path: /metadata/name, value: klquiz-live-metrics-prod}
+  - target: {kind: ClusterRoleBinding, name: klquiz-live-metrics}
+    patch: |
+      - {op: replace, path: /metadata/name, value: klquiz-live-metrics-prod}
+      - {op: replace, path: /roleRef/name, value: klquiz-live-metrics-prod}
+      - {op: replace, path: /subjects/0/namespace, value: klquiz-prod}
   - target: {kind: Ingress, name: klquiz}
     patch: |
       - op: replace
