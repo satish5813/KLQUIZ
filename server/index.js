@@ -40,6 +40,7 @@ const { rateLimit, ipKeyGenerator } = require('express-rate-limit');
 const { db, get } = require('./db');
 const { seed } = require('./seed');
 const { csrfGuard, HttpError, verify } = require('./security');
+const traffic = require('./traffic');
 
 seed();
 
@@ -70,7 +71,8 @@ app.use(helmet({
       imgSrc: ["'self'", 'data:', 'blob:'],
       mediaSrc: ["'self'", 'blob:'],
       workerSrc: ["'self'", 'blob:'],
-      connectSrc: ["'self'"],
+      // The exam page streams the camera to the live monitor over a WebSocket on this same host.
+      connectSrc: ["'self'", (req) => `wss://${String(req.headers.host || '').replace(/[^\w.:-]/g, '')}`],
       fontSrc: ["'self'"],
       objectSrc: ["'none'"],
       frameAncestors: ["'none'"],
@@ -97,6 +99,8 @@ const sessionKey = (req) => {
   req.klLimitKey = stu && stu.role === 'student' ? `stu:${stu.sid}` : adm && adm.role === 'admin' ? `adm:${adm.sub}` : null;
   return req.klLimitKey;
 };
+// Bandwidth per candidate for the live monitor (bytes in/out of every API request).
+app.use('/api', traffic.middleware(sessionKey));
 app.use('/api', rateLimit({
   windowMs: 60000, standardHeaders: 'draft-7', legacyHeaders: false,
   keyGenerator: (req) => sessionKey(req) || `ip:${ipKeyGenerator(req.ip)}`,

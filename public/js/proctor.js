@@ -325,9 +325,65 @@ async function prepare(videoEl, report) {
   return res;
 }
 
-async function begin() {
+// ---------------- live stream to the examiners' monitor (7 frames/s) ----------------
+// 320x240 JPEG normally (about 8-12 KB a frame, ~0.6 Mbit/s); 640x480 while an examiner has this candidate enlarged.
+// A frame is skipped when the connection has not sent the previous ones yet, so a slow network never piles up.
+const LIVE = { ws: null, q: 'sd', retry: 0, info: null, canvas: null, sent: 0, skipped: 0, timers: [] };
+const LIVE_FPS = 7;
+
+function liveConnect() {
+  if (!P.running) return;
+  let ws;
+  try { ws = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/live/ws/student`); } catch { return; }
+  ws.binaryType = 'arraybuffer';
+  ws.onopen = () => {
+    LIVE.retry = 0;
+    const i = LIVE.info || {};
+    ws.send(JSON.stringify({ type: 'hello', name: i.student?.full_name, testId: i.test?.id, testName: i.test ? `${i.test.exam_code} · ${i.test.name}` : '',
+      mem: navigator.deviceMemory, cores: navigator.hardwareConcurrency, screen: `${screen.width}x${screen.height}`,
+      mobile: /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent), ua: navigator.userAgent }));
+  };
+  ws.onmessage = (e) => { try { const m = JSON.parse(e.data); if (m.type === 'quality') LIVE.q = m.q; } catch { /* binary or bad */ } };
+  ws.onclose = () => {
+    if (LIVE.ws === ws) LIVE.ws = null;
+    if (P.running) setTimeout(liveConnect, Math.min(30000, 2000 * 2 ** LIVE.retry++));
+  };
+  ws.onerror = () => {};
+  LIVE.ws = ws;
+}
+
+function liveFrame() {
+  const ws = LIVE.ws;
+  const v = P.video;
+  if (!ws || ws.readyState !== 1 || !v || v.readyState < 2) return;
+  if (ws.bufferedAmount > 48000) { LIVE.skipped++; return; }
+  const [w, h] = LIVE.q === 'hd' ? [640, 480] : [320, 240];
+  const c = LIVE.canvas || (LIVE.canvas = document.createElement('canvas'));
+  if (c.width !== w) { c.width = w; c.height = h; }
+  c.getContext('2d').drawImage(v, 0, 0, w, h);
+  c.toBlob((b) => { if (b && ws.readyState === 1) { ws.send(b); LIVE.sent++; } }, 'image/jpeg', LIVE.q === 'hd' ? 0.7 : 0.6);
+}
+
+function liveStats() {
+  const ws = LIVE.ws;
+  if (!ws || ws.readyState !== 1) return;
+  const m = performance.memory;
+  const n = navigator.connection || {};
+  ws.send(JSON.stringify({ type: 'stats', heapMB: m ? Math.round(m.usedJSHeapSize / 1048576) : null, heapLimitMB: m ? Math.round(m.jsHeapSizeLimit / 1048576) : null,
+    net: n.effectiveType, downlink: n.downlink, rtt: n.rtt, sentFps: Math.round((LIVE.sent / 5) * 10) / 10, skipped: LIVE.skipped }));
+  LIVE.sent = 0;
+}
+
+function liveStart(info) {
+  LIVE.info = info;
+  liveConnect();
+  LIVE.timers.push(setInterval(liveFrame, 1000 / LIVE_FPS), setInterval(liveStats, 5000));
+}
+
+async function begin(info) {
   if (P.running || !P.stream) return;
   P.running = true;
+  liveStart(info);
   P.extended = !!(window.screen && window.screen.isExtended);
   const pip = $('#procPip');
   if (pip) { pip.appendChild(P.video); pip.classList.remove('hidden'); }
@@ -340,6 +396,9 @@ async function begin() {
 
 function stop() {
   P.running = false;
+  LIVE.timers.forEach(clearInterval);
+  LIVE.timers = [];
+  if (LIVE.ws) LIVE.ws.close();
   P.timers.forEach(clearInterval);
   P.timers = [];
   if (P.audio) P.audio.close().catch(() => {});

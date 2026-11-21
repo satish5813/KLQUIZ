@@ -581,7 +581,7 @@ router.get('/tests/:id/proctoring', (req, res) => {
   const t = loadTest(req.params.id);
   const rows = all(`SELECT a.*, s.full_name, s.email, s.mobile FROM attempts a JOIN students s ON s.id = a.student_id
     WHERE a.test_id = ? ORDER BY a.proctor_high DESC, a.proctor_flags DESC, a.id`, t.id).map((a) => ({
-    attempt_id: a.id, full_name: a.full_name, contact: shownEmail(a.email) || a.mobile, status: a.status,
+    attempt_id: a.id, student_id: a.student_id, full_name: a.full_name, contact: shownEmail(a.email) || a.mobile, status: a.status,
     started_at: a.started_at, submitted_at: a.submitted_at, ...proctorSummary(a),
   }));
   const usd = rows.reduce((m, r) => m + r.cost_usd, 0);
@@ -598,6 +598,9 @@ router.get('/tests/:id/proctoring', (req, res) => {
 });
 
 // AI usage ledger: everything spent on Gemini proctoring, per exam and per day (IST).
+// Exam-portal traffic per candidate (for the live monitor's bandwidth view).
+router.get('/traffic', (req, res) => res.json(require('../traffic').report()));
+
 router.get('/ai-usage', (req, res) => {
   const rate = proctor.usdInr();
   const perTest = all(`SELECT u.test_id, t.name, t.exam_code, COUNT(DISTINCT u.attempt_id) students, COUNT(*) calls,

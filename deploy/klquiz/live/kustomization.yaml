@@ -1,0 +1,6 @@
+# Live proctoring monitor (separate pod): candidates' camera streams at 7 frames/s and the examiners' wall at /live/.
+# Included by an overlay together with ../base. The overlay renames the cluster-wide RBAC objects per environment.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - live.yaml

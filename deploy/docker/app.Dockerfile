@@ -15,6 +15,8 @@ COPY --chown=node:node package.json ./
 COPY --chown=node:node server server
 COPY --chown=node:node public public
 COPY --chown=node:node scripts scripts
+# Live proctoring monitor (same image, started with node live/server.js in its own pod).
+COPY --chown=node:node live live
 RUN mkdir -p /data && chown node:node /data
 USER node
 EXPOSE 8080

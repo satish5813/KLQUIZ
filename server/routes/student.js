@@ -173,7 +173,7 @@ router.get('/exam', (req, res) => {
   res.json({
     student: { full_name: s.full_name, email: shownContact(s.email), mobile: s.mobile },
     test: {
-      name: test.name, exam_code: test.exam_code, description: test.description, duration_min: test.duration_min,
+      id: test.id, name: test.name, exam_code: test.exam_code, description: test.description, duration_min: test.duration_min,
       marks_correct: test.marks_correct, marks_wrong: test.marks_wrong, max_violations: test.max_violations,
       instructions: test.instructions, state: testWindowState(test), proctor_mode: test.proctor_mode,
       sections: sectionsWithPaper(test.id).map((x) => ({ name: x.name, question_count: x.question_count })),

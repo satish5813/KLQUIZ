@@ -7,10 +7,24 @@ namespace: klquiz-staging
 resources:
   - namespace.yaml
   - ../../base
+  - ../../live
 images:
   - name: ghcr.io/satish5813/klquiz
     newTag: "46efba6c0bbd"
 patches:
+  - target: {kind: Ingress, name: klquiz}
+    patch: |
+      - op: add
+        path: /spec/rules/0/http/paths/0
+        value: {path: /live, pathType: Prefix, backend: {service: {name: live, port: {name: http}}}}
+  - target: {kind: ClusterRole, name: klquiz-live-metrics}
+    patch: |
+      - {op: replace, path: /metadata/name, value: klquiz-live-metrics-staging}
+  - target: {kind: ClusterRoleBinding, name: klquiz-live-metrics}
+    patch: |
+      - {op: replace, path: /metadata/name, value: klquiz-live-metrics-staging}
+      - {op: replace, path: /roleRef/name, value: klquiz-live-metrics-staging}
+      - {op: replace, path: /subjects/0/namespace, value: klquiz-staging}
   - target: {kind: Ingress, name: klquiz}
     patch: |
       - op: replace

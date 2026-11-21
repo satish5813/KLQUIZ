@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <title>Live Proctoring Monitor · KL University</title>
+  <link rel="icon" href="/img/klu-logo.webp">
+  <link rel="stylesheet" href="/live/live.css">
+</head>
+<body>
+  <header class="top">
+    <div class="campus"><img src="/img/klh-logo.png" alt="KL University, Hyderabad"><span>Hyderabad</span></div>
+    <div class="title">
+      <h1>Live Proctoring Monitor</h1>
+      <div class="sub"><span class="dot" id="connDot"></span><span id="connText">Connecting…</span> · <select id="testSel" aria-label="Exam"></select></div>
+    </div>
+    <div class="campus"><img src="/img/klu-logo.webp" alt="KL University, Vijayawada"><span>Vijayawada</span></div>
+  </header>
+
+  <main>
+    <section class="stats" id="stats"></section>
+
+    <section class="card">
+      <div class="card-head">
+        <h2>Live candidates</h2>
+        <div class="controls">
+          <input id="search" type="search" placeholder="Search name…">
+          <select id="filter"><option value="online">Streaming now</option><option value="all">All</option><option value="flagged">High / medium risk</option><option value="offline">Disconnected</option></select>
+          <label>Wall fps <select id="fps"><option>7</option><option>4</option><option>2</option><option>1</option></select></label>
+          <label>Tiles <select id="pageSize"><option>12</option><option selected>24</option><option>48</option></select></label>
+          <span class="pager"><button id="prev" type="button">‹</button><span id="pageInfo">1 / 1</span><button id="next" type="button">›</button></span>
+        </div>
+      </div>
+      <div class="grid" id="grid"></div>
+      <p class="hint">Each tile is the candidate's camera, 320×240 at up to 7 frames per second. Click a tile to enlarge it: that candidate switches to 640×480 while you watch. Video is never recorded here; the evidence photos stay in the portal's proctoring reports.</p>
+    </section>
+
+    <div class="two">
+      <section class="card">
+        <h2>Servers</h2>
+        <table class="tbl" id="nodes"></table>
+        <h3>Pods (this exam system)</h3>
+        <table class="tbl" id="pods"></table>
+        <p class="hint" id="clusterNote"></p>
+      </section>
+      <section class="card">
+        <h2>Bandwidth &amp; memory</h2>
+        <table class="tbl" id="bw"></table>
+      </section>
+    </div>
+
+    <section class="card">
+      <div class="card-head"><h2>Per candidate: bandwidth, memory and AI cost</h2><button id="csv" type="button" class="btn">⬇ CSV</button></div>
+      <div class="scroll"><table class="tbl wide" id="perStudent"></table></div>
+    </section>
+
+    <section class="card">
+      <div class="card-head"><h2>Bandwidth calculator (up to 4K)</h2>
+        <div class="controls"><label>Candidates <input id="calcN" type="number" min="1" max="10000" value="100"></label><label>fps <input id="calcFps" type="number" min="1" max="30" value="7"></label></div></div>
+      <div class="scroll"><table class="tbl wide" id="calc"></table></div>
+      <p class="hint" id="calcNote"></p>
+    </section>
+  </main>
+
+  <div class="modal hidden" id="modal" role="dialog" aria-modal="true">
+    <div class="box">
+      <div class="mhead"><h2 id="mTitle"></h2><button id="mClose" type="button" aria-label="Close">×</button></div>
+      <div class="mbody"><img id="mImg" alt="Live camera"><table class="tbl" id="mInfo"></table></div>
+    </div>
+  </div>
+  <script src="/live/live.js"></script>
+</body>
+</html>

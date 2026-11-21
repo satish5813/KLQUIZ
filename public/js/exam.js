@@ -102,7 +102,7 @@
     try {
       await api('/api/student/start', { method: 'POST' });
       await loadPaper();
-      if (S.proctored && S.started) (await proctorApi()).begin();
+      if (S.proctored && S.started) (await proctorApi()).begin(S.info);
     } catch (e) {
       btn.disabled = false;
       $('#iErr').textContent = e.message; $('#iErr').classList.remove('hidden');
