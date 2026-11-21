@@ -142,6 +142,31 @@ const assetFile = (url) => {
   const prefix = Object.keys(VENDOR).find((p) => url.startsWith(p));
   return prefix ? path.join(VENDOR[prefix], url.slice(prefix.length)) : path.join(PUBLIC, url);
 };
+// Proctoring detector files (MediaPipe engine + models, ~18.5 MB per candidate). Cloudflare's default rules cache
+// .bin and .js files but not .wasm/.task/.tflite, so every candidate used to fetch them from this server (1,000
+// starting together = 18.5 GB through the tunnel). They are also served as /dl/<version>/<name>.bin with a one-year
+// immutable cache, so Cloudflare's edge and the browser keep them; any change to a file gives a new version URL.
+const DETECTOR = {
+  'vision_wasm_internal.wasm': [path.join(NM, '@mediapipe', 'tasks-vision', 'wasm', 'vision_wasm_internal.wasm'), 'application/wasm'],
+  'vision_wasm_internal.js': [path.join(NM, '@mediapipe', 'tasks-vision', 'wasm', 'vision_wasm_internal.js'), 'text/javascript; charset=utf-8'],
+  'face_landmarker.task': [path.join(PUBLIC, 'models', 'face_landmarker.task'), 'application/octet-stream'],
+  'efficientdet_lite0.tflite': [path.join(PUBLIC, 'models', 'efficientdet_lite0.tflite'), 'application/octet-stream'],
+  'blaze_face_short_range.tflite': [path.join(PUBLIC, 'models', 'blaze_face_short_range.tflite'), 'application/octet-stream'],
+};
+const DETECTOR_VER = (() => {
+  const h = crypto.createHash('sha256');
+  for (const [file] of Object.values(DETECTOR)) if (fs.existsSync(file)) h.update(fs.readFileSync(file));
+  return h.digest('hex').slice(0, 10);
+})();
+app.get('/dl/:ver/:name', (req, res, next) => {
+  const m = /^(.+)\.bin$/.exec(req.params.name);
+  const d = m && DETECTOR[m[1]];
+  if (!d || req.params.ver !== DETECTOR_VER || !fs.existsSync(d[0])) return next();
+  res.set('Cache-Control', 'public, max-age=31536000, immutable');
+  res.set('Content-Type', d[1]);
+  res.sendFile(d[0]);
+});
+
 const stampedPages = new Map();
 for (const page of ['index.html', 'exam.html', 'result.html', 'admin/index.html', 'admin/login.html']) {
   const html = fs.readFileSync(path.join(PUBLIC, page), 'utf8').replace(/(src|href)="(\/[^"?#]+\.(?:js|css))"/g, (m, attr, url) => {
@@ -149,7 +174,7 @@ for (const page of ['index.html', 'exam.html', 'result.html', 'admin/index.html'
     if (!fs.existsSync(file)) return m;
     const v = crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex').slice(0, 10);
     return `${attr}="${url}?v=${v}"`;
-  });
+  }).replace('data-dl=""', `data-dl="${DETECTOR_VER}"`);
   stampedPages.set(page, html);
 }
 const pageFor = (p) => {

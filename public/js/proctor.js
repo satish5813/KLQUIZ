@@ -12,6 +12,9 @@
 const { api, el, $ } = window.KL;
 
 const PERIOD_MS = 60000;      // routine AI check
+// Lab: the browser watches the candidate continuously and every alert gets an AI check at once, so the routine
+// AI check runs every 2 minutes instead of every minute (halves the AI cost of a lab exam).
+const LAB_PERIOD_MS = 120000;
 const FACE_MS = 1000;         // face detector
 const OBJECT_MS = 3000;       // phone / device / book detector
 const NO_FACE_S = 6;          // seconds without a face before it is reported
@@ -25,6 +28,10 @@ const LAB_MS = 200;           // face landmarks 5 times a second (lip and eye mo
 const EYES_S = 3;             // seconds with the eyes turned left/right/up
 const LAB_YAW_DEG = 30;       // head turned more than this many degrees
 const NEAR_FACE = 0.4;        // another face counts only if it is at least 40% of the candidate's face size (beside them)
+
+// Detector files come from versioned, edge-cached URLs (/dl/<version>/<name>.bin, see server/index.js).
+const DL = (document.querySelector('script[data-dl]') || { dataset: {} }).dataset.dl || '';
+const dl = (name, plain) => (DL ? `/dl/${DL}/${name}.bin` : plain);
 
 const P = {
   stream: null, video: null, faceDet: null, objDet: null, detectorsReady: false,
@@ -52,23 +59,26 @@ async function openCamera() {
 async function loadDetectors() {
   try {
     const vision = await import('/vendor/mediapipe/vision_bundle.mjs');
-    const files = await vision.FilesetResolver.forVisionTasks('/vendor/mediapipe/wasm');
+    // The cached copy is the SIMD build; browsers without WebAssembly SIMD keep MediaPipe's own choice.
+    const plain = await vision.FilesetResolver.forVisionTasks('/vendor/mediapipe/wasm');
+    const files = DL && !/nosimd/.test(plain.wasmBinaryPath)
+      ? { wasmLoaderPath: dl('vision_wasm_internal.js'), wasmBinaryPath: dl('vision_wasm_internal.wasm') } : plain;
     if (P.lab) {
       // 478 face points + blendshapes (jaw, eyes) + head pose, for up to 3 faces (the candidate is the largest).
       try {
         P.landmarker = await vision.FaceLandmarker.createFromOptions(files, {
-          baseOptions: { modelAssetPath: '/models/face_landmarker.task' }, runningMode: 'VIDEO', numFaces: 3,
+          baseOptions: { modelAssetPath: dl('face_landmarker.task', '/models/face_landmarker.task') }, runningMode: 'VIDEO', numFaces: 3,
           outputFaceBlendshapes: true, outputFacialTransformationMatrixes: true, minFaceDetectionConfidence: 0.5,
         });
       } catch (e) { console.warn('face landmarker unavailable', e); }
     }
     P.faceDet = await vision.FaceDetector.createFromOptions(files, {
-      baseOptions: { modelAssetPath: '/models/blaze_face_short_range.tflite' }, runningMode: 'VIDEO', minDetectionConfidence: 0.5,
+      baseOptions: { modelAssetPath: dl('blaze_face_short_range.tflite', '/models/blaze_face_short_range.tflite') }, runningMode: 'VIDEO', minDetectionConfidence: 0.5,
     });
     P.detectorsReady = true;
     // The object model is larger (4.6 MB); the exam can start while it loads.
     vision.ObjectDetector.createFromOptions(files, {
-      baseOptions: { modelAssetPath: '/models/efficientdet_lite0.tflite' }, runningMode: 'VIDEO',
+      baseOptions: { modelAssetPath: dl('efficientdet_lite0.tflite', '/models/efficientdet_lite0.tflite') }, runningMode: 'VIDEO',
       scoreThreshold: 0.45, maxResults: 5, categoryAllowlist: ['cell phone', 'laptop', 'tv', 'book'],
     }).then((d) => { P.objDet = d; }).catch((e) => console.warn('object detector unavailable', e));
   } catch (e) {
@@ -377,7 +387,7 @@ function startLoops() {
   P.timers.push(setInterval(watchObjects, OBJECT_MS));
   P.timers.push(setInterval(watchDark, 2500));
   P.timers.push(setInterval(watchScreens, 5000));
-  P.timers.push(setInterval(() => sendFrame('periodic'), PERIOD_MS));
+  P.timers.push(setInterval(() => sendFrame('periodic'), P.lab ? LAB_PERIOD_MS : PERIOD_MS));
   startAudio();
 }
 

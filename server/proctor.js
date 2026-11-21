@@ -56,41 +56,28 @@ const KINDS = {
 };
 const BROWSER_KINDS = Object.keys(KINDS).filter((k) => !k.startsWith('ai_') && k !== 'reference');
 
-const SCHEMA = {
-  type: 'OBJECT',
-  properties: {
-    persons: { type: 'INTEGER' },
-    face: { type: 'BOOLEAN' },
-    away: { type: 'BOOLEAN' },
-    phone: { type: 'BOOLEAN' },
-    device: { type: 'BOOLEAN' },
-    earphones: { type: 'BOOLEAN' },
-    material: { type: 'BOOLEAN' },
-  },
-  required: ['persons', 'face', 'away', 'phone', 'device', 'earphones', 'material'],
-};
-// Kept short on purpose: every token here is paid for once a minute per candidate.
-const PROMPT = 'Webcam frame of a student taking an online exam alone at home. Answer strictly: persons = number of people '
-  + 'visible; face = student\'s face clearly visible; away = student looking away from the screen (sideways, back, or down '
-  + 'at something other than the keyboard); phone = mobile phone visible anywhere; device = another monitor, laptop or tablet '
-  + 'visible; earphones = earphones/headset/earbuds worn; material = book, notes or written paper visible.';
+// The answer is 7 digits (e.g. "1000000"), not JSON: JSON came back pretty-printed at ~52 output tokens, the digits
+// take ~5, and output tokens cost 6 times input tokens - this roughly halves the price of every check.
+// Kept short on purpose: every token here is paid for on every check.
+const PROMPT = 'Webcam frame of a student taking an online exam alone at home. Reply with exactly 7 digits, nothing else: '
+  + '1) number of people visible (0-9); then 1 = yes, 0 = no for: 2) student\'s face clearly visible; 3) looking away from the '
+  + 'screen (sideways, back, or down at something other than the keyboard); 4) mobile phone visible; 5) another monitor, laptop '
+  + 'or tablet visible; 6) earphones/headset worn; 7) book, notes or written paper visible.';
+const PROMPT_KEYS = ['persons', 'face', 'away', 'phone', 'device', 'earphones', 'material'];
 
 // Lab sessions: the background is full of students, staff and monitors; only the candidate matters.
-const LAB_SCHEMA = {
-  type: 'OBJECT',
-  properties: {
-    face: { type: 'BOOLEAN' }, near: { type: 'INTEGER' }, phone: { type: 'BOOLEAN' }, earphones: { type: 'BOOLEAN' },
-    material: { type: 'BOOLEAN' }, away: { type: 'BOOLEAN' }, talking: { type: 'BOOLEAN' },
-  },
-  required: ['face', 'near', 'phone', 'earphones', 'material', 'away', 'talking'],
-};
-const LAB_PROMPT = 'Webcam frame of a student writing an exam in a university computer lab. Other students at their own desks, '
-  + 'staff walking or standing, and computer monitors in the background are NORMAL - ignore them completely. Judge only the student '
-  + 'closest to the camera: face = that student\'s face is clearly visible; near = number of OTHER people within arm\'s reach of the '
-  + 'student (beside them or leaning in), 0 if none; phone = the student is holding or using a mobile phone (ignore phones held by '
-  + 'other people); earphones = the student wears earphones/headset/earbuds; material = book, notes or written paper on the student\'s '
-  + 'desk or in hand; away = the student is looking at a neighbour\'s screen or turned towards another person; talking = the student is '
-  + 'talking to someone.';
+const LAB_PROMPT = 'Computer-lab exam webcam frame. Background students, staff and monitors are normal: ignore them. '
+  + 'Judge only the student nearest the camera. Reply with exactly 7 digits, nothing else: 1) face visible; '
+  + '2) number of other people within arm\'s reach (0-9); 3) student holds/uses a phone; 4) earphones/headset; '
+  + '5) notes, book or paper; 6) looking at a neighbour or turned to someone; 7) talking to someone. 1 = yes, 0 = no.';
+const LAB_KEYS = ['f', 'n', 'p', 'e', 'm', 'a', 't'];
+
+// "1000000" -> { persons: 1, face: 0, ... }; null when the reply is not 7 digits.
+function parseDigits(text, keys) {
+  const d = String(text).replace(/\D/g, '');
+  if (d.length < keys.length) return null;
+  return Object.fromEntries(keys.map((k, i) => [k, Number(d[i])]));
+}
 
 let inFlight = 0;
 // Routine photos: one kept every 5 minutes per attempt, so the examiner can see the whole exam, not only incidents.
@@ -132,9 +119,7 @@ async function askGemini(jpeg, lab = false) {
     contents: [{ role: 'user', parts: [{ inlineData: { mimeType: 'image/jpeg', data: jpeg.toString('base64') } }, { text: lab ? LAB_PROMPT : PROMPT }] }],
     generationConfig: {
       temperature: 0,
-      maxOutputTokens: 120,
-      responseMimeType: 'application/json',
-      responseSchema: lab ? LAB_SCHEMA : SCHEMA,
+      maxOutputTokens: 16,
       mediaResolution: 'MEDIA_RESOLUTION_LOW',
       thinkingConfig: { thinkingLevel: 'minimal' },
     },
@@ -150,7 +135,8 @@ async function askGemini(jpeg, lab = false) {
   const u = j.usageMetadata || {};
   const text = (j.candidates?.[0]?.content?.parts || []).map((p) => p.text || '').join('');
   return {
-    verdict: JSON.parse(text),
+    // null when the reply could not be read (counted and paid for, but no finding is recorded)
+    verdict: parseDigits(text, lab ? LAB_KEYS : PROMPT_KEYS),
     tokIn: u.promptTokenCount || 0,
     tokOut: (u.candidatesTokenCount || 0) + (u.thoughtsTokenCount || 0),
   };
@@ -159,14 +145,15 @@ async function askGemini(jpeg, lab = false) {
 // Maps Gemini's answer to report findings.
 function findings(v, lab = false) {
   const f = [];
+  if (!v) return f;
   if (lab) {
-    if (!v.face) f.push('ai_no_face');
-    if (v.near > 0) f.push('ai_neighbour');
-    if (v.phone) f.push('ai_phone');
-    if (v.earphones) f.push('ai_earphones');
-    if (v.material) f.push('ai_material');
-    if (v.talking) f.push('ai_talking');
-    if (v.away && v.face) f.push('ai_away');
+    if (!v.f) f.push('ai_no_face');
+    if (v.n > 0) f.push('ai_neighbour');
+    if (v.p) f.push('ai_phone');
+    if (v.e) f.push('ai_earphones');
+    if (v.m) f.push('ai_material');
+    if (v.t) f.push('ai_talking');
+    if (v.a && v.f) f.push('ai_away');
     return f;
   }
   if (v.persons > 1) f.push('ai_person');
@@ -222,7 +209,7 @@ async function checkFrame(attempt, jpeg, reason, mode = 'ai', lab = false) {
   const found = findings(r.verdict, lab);
   if (found.length) {
     const file = triggerFile || saveFile(attempt, found[0], 'jpg', jpeg);
-    const detail = `${lab ? `lab · near ${r.verdict.near}` : `persons ${r.verdict.persons}`}${trigger ? ` · checked after: ${KINDS[trigger][1]}` : ''}`;
+    const detail = `${lab ? `lab · near ${r.verdict && r.verdict.n}` : `persons ${r.verdict && r.verdict.persons}`}${trigger ? ` · checked after: ${KINDS[trigger][1]}` : ''}`;
     found.forEach((k) => addEvent(attempt, 'ai', k, detail, file));
   }
   // Looking away once is common (thinking, reading the question); only stronger findings warn the candidate.
