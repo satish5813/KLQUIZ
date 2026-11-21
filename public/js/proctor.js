@@ -20,6 +20,11 @@ const TURNED_S = 5;           // seconds with the head turned away
 const YAW_LIMIT = 0.55;       // nose offset from the eye midpoint, in eye distances (0 = facing the screen)
 const SPEECH_FRAMES = 15;     // 100 ms frames of voice within 3 s that count as talking (1.5 s)
 const COOLDOWN_MS = 20000;    // the same finding is reported at most this often
+// Lab sessions (exam written in a computer lab): look at the candidate only.
+const LAB_MS = 200;           // face landmarks 5 times a second (lip and eye movement need it)
+const EYES_S = 3;             // seconds with the eyes turned left/right/up
+const LAB_YAW_DEG = 30;       // head turned more than this many degrees
+const NEAR_FACE = 0.4;        // another face counts only if it is at least 40% of the candidate's face size (beside them)
 
 const P = {
   stream: null, video: null, faceDet: null, objDet: null, detectorsReady: false,
@@ -48,6 +53,15 @@ async function loadDetectors() {
   try {
     const vision = await import('/vendor/mediapipe/vision_bundle.mjs');
     const files = await vision.FilesetResolver.forVisionTasks('/vendor/mediapipe/wasm');
+    if (P.lab) {
+      // 478 face points + blendshapes (jaw, eyes) + head pose, for up to 3 faces (the candidate is the largest).
+      try {
+        P.landmarker = await vision.FaceLandmarker.createFromOptions(files, {
+          baseOptions: { modelAssetPath: '/models/face_landmarker.task' }, runningMode: 'VIDEO', numFaces: 3,
+          outputFaceBlendshapes: true, outputFacialTransformationMatrixes: true, minFaceDetectionConfidence: 0.5,
+        });
+      } catch (e) { console.warn('face landmarker unavailable', e); }
+    }
     P.faceDet = await vision.FaceDetector.createFromOptions(files, {
       baseOptions: { modelAssetPath: '/models/blaze_face_short_range.tflite' }, runningMode: 'VIDEO', minDetectionConfidence: 0.5,
     });
@@ -119,6 +133,8 @@ const MESSAGES = {
   device_seen: 'Another screen or laptop is visible.',
   book_seen: 'A book or notes are visible. Remove them.',
   speech: 'Talking was detected. The exam must be written alone and in silence.',
+  talking: 'Your lips are moving — talking is not allowed during the exam.',
+  eyes_away: 'Keep your eyes on your own screen.',
   second_screen: 'A second display is connected. Disconnect it.',
   camera_dark: 'Your camera is covered or the room is too dark.',
 };
@@ -176,17 +192,90 @@ function watchFaces() {
   $('#procDot')?.classList.toggle('bad', dets.length !== 1);
 }
 
+// Lab: an object counts only if it is near the candidate (big enough, beside or below their face). Phones in
+// the hands of invigilators or students further back are small and away from the candidate, so they are ignored.
+function nearCandidate(d) {
+  if (!P.lab) return true;
+  const f = LAB.main;
+  const vw = P.video.videoWidth; const vh = P.video.videoHeight;
+  if (!f || !vw) return false;
+  const b = d.boundingBox;
+  const cx = (b.originX + b.width / 2) / vw; const cy = (b.originY + b.height / 2) / vh;
+  const area = (b.width * b.height) / (vw * vh);
+  return area >= 0.006 && Math.abs(cx - (f.x + f.w / 2)) < f.w * 2.2 && cy > f.y;
+}
+
 function watchObjects() {
   if (!P.objDet || P.video.readyState < 2) return;
   let res;
   try { res = P.objDet.detectForVideo(P.video, ts()).detections; } catch { return; }
-  const seen = new Set(res.map((d) => d.categories[0]?.categoryName));
-  const map = { 'cell phone': 'phone_seen', laptop: 'device_seen', tv: 'device_seen', book: 'book_seen' };
+  const seen = new Set(res.filter(nearCandidate).map((d) => d.categories[0]?.categoryName));
+  // Lab monitors are everywhere, so screens are not reported in a lab.
+  const map = P.lab ? { 'cell phone': 'phone_seen', book: 'book_seen' } : { 'cell phone': 'phone_seen', laptop: 'device_seen', tv: 'device_seen', book: 'book_seen' };
   for (const [cat, kind] of Object.entries(map)) {
     // Two detections in a row (3 s apart) before reporting, to skip one-frame mistakes.
     P.objHits[cat] = seen.has(cat) ? (P.objHits[cat] || 0) + 1 : 0;
     if (P.objHits[cat] >= 2) { P.objHits[cat] = 0; finding(kind); }
   }
+}
+
+// ---------------- lab mode: the candidate only ----------------
+const LAB = { main: null, jaw: [] };
+
+// Faces from the landmarker, largest (closest = the candidate) first.
+function labScan() {
+  if (!P.landmarker || P.video.readyState < 2) return null;
+  const res = P.landmarker.detectForVideo(P.video, ts());
+  const faces = (res.faceLandmarks || []).map((pts, i) => {
+    let x0 = 1; let y0 = 1; let x1 = 0; let y1 = 0;
+    for (const q of pts) { x0 = Math.min(x0, q.x); y0 = Math.min(y0, q.y); x1 = Math.max(x1, q.x); y1 = Math.max(y1, q.y); }
+    return { i, x: x0, y: y0, w: x1 - x0, h: y1 - y0, area: (x1 - x0) * (y1 - y0) };
+  }).sort((a, b) => b.area - a.area);
+  const main = faces[0] || null;
+  const near = main ? faces.slice(1).filter((f) => f.area >= main.area * NEAR_FACE).length : 0;
+  return { res, main, near, count: faces.length };
+}
+
+function watchLab() {
+  let s;
+  try { s = labScan(); } catch { return; }
+  if (!s) return;
+  LAB.main = s.main;
+  sustained('no_face', !s.main, NO_FACE_S);
+  sustained('multiple_faces', s.near > 0, MULTI_FACE_S);
+  $('#procDot')?.classList.toggle('bad', !s.main || s.near > 0);
+  if (!s.main) { LAB.jaw = []; return; }
+  const bs = {};
+  ((s.res.faceBlendshapes || [])[s.main.i]?.categories || []).forEach((c) => { bs[c.categoryName] = c.score; });
+  // Head turned: yaw angle from the face's transformation matrix (column-major 4x4).
+  const m = (s.res.facialTransformationMatrixes || [])[s.main.i]?.data;
+  const yawDeg = m ? Math.abs((Math.atan2(m[8], m[10]) * 180) / Math.PI) : 0;
+  sustained('face_turned', yawDeg > LAB_YAW_DEG, TURNED_S);
+  // Eyes turned left/right or up for a while (looking down at the keyboard or paper is normal).
+  const side = Math.max(((bs.eyeLookOutLeft || 0) + (bs.eyeLookInRight || 0)) / 2, ((bs.eyeLookOutRight || 0) + (bs.eyeLookInLeft || 0)) / 2);
+  const up = ((bs.eyeLookUpLeft || 0) + (bs.eyeLookUpRight || 0)) / 2;
+  sustained('eyes_away', yawDeg <= LAB_YAW_DEG && (side > 0.55 || up > 0.55), EYES_S);
+  // Talking = lip movement: the jaw opens and closes repeatedly within 3 s. The microphone is not used to decide,
+  // so room noise and other people's voices are ignored; it only records 10 s of sound as evidence.
+  LAB.jaw.push(bs.jawOpen || 0);
+  if (LAB.jaw.length > 15) LAB.jaw.shift();
+  if (LAB.jaw.length === 15) {
+    let swings = 0;
+    for (let k = 2; k < 15; k++) {
+      const a = LAB.jaw[k - 2]; const b = LAB.jaw[k - 1]; const c = LAB.jaw[k];
+      if ((b - a) * (c - b) < 0 && Math.abs(c - b) > 0.03) swings++;
+    }
+    const range = Math.max(...LAB.jaw) - Math.min(...LAB.jaw);
+    if (swings >= 4 && range > 0.12) { LAB.jaw = []; labTalking(); }
+  }
+}
+
+function labTalking() {
+  if (!P.running || !cooled('talking')) return;
+  warn(MESSAGES.talking);
+  sendFrame('talking');
+  const track = P.stream.getAudioTracks()[0];
+  if (track && !P.recording) recordClip(track);
 }
 
 function watchDark() {
@@ -201,7 +290,8 @@ function watchScreens() {
 
 function startAudio() {
   const track = P.stream.getAudioTracks()[0];
-  if (!track) return;
+  // Lab: talking is judged from lip movement, so room noise never raises an alert.
+  if (!track || P.lab) return;
   try {
     const ctx = new (window.AudioContext || window.webkitAudioContext)();
     ctx.resume().catch(() => {});
@@ -282,7 +372,8 @@ async function reconnect() {
 }
 
 function startLoops() {
-  P.timers.push(setInterval(watchFaces, FACE_MS));
+  if (P.lab && P.landmarker) P.timers.push(setInterval(watchLab, LAB_MS));
+  else P.timers.push(setInterval(watchFaces, FACE_MS));
   P.timers.push(setInterval(watchObjects, OBJECT_MS));
   P.timers.push(setInterval(watchDark, 2500));
   P.timers.push(setInterval(watchScreens, 5000));
@@ -292,8 +383,9 @@ function startLoops() {
 
 // ---------------- public API (used by exam.js) ----------------
 // Before the exam: camera + microphone permission, detectors, and the checks the candidate must pass.
-async function prepare(videoEl, report) {
+async function prepare(videoEl, report, opts = {}) {
   P.video = videoEl;
+  P.lab = !!opts.lab;
   if (P.stream) P.stream.getTracks().forEach((t) => t.stop());
   const res = { camera: false, mic: false, face: false, screen: !(window.screen && window.screen.isExtended), error: '' };
   try {
@@ -314,11 +406,19 @@ async function prepare(videoEl, report) {
     report(res);
     return res;
   }
-  // Wait (up to 30 s) until exactly one face is seen.
+  // Wait (up to 30 s) until exactly one face is seen (in a lab: until the candidate's own face is seen; people in
+  // the background are fine).
   for (let i = 0; i < 60 && !res.face; i++) {
-    const d = faces();
-    res.face = !!d && d.length === 1;
-    res.faces = d ? d.length : null;
+    if (P.lab && P.landmarker) {
+      let s = null;
+      try { s = labScan(); } catch { /* not ready */ }
+      res.face = !!(s && s.main && s.near === 0);
+      res.faces = s ? (s.main ? 1 + s.near : 0) : null;
+    } else {
+      const d = faces();
+      res.face = !!d && d.length === 1;
+      res.faces = d ? d.length : null;
+    }
     report(res);
     if (!res.face) await sleep(500);
   }

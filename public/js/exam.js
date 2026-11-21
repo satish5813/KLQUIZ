@@ -71,7 +71,7 @@
       $('#procHint').textContent = x.error ? 'Camera not available'
         : x.face ? 'Camera ready' : x.faces === 0 ? 'Face not detected: sit in front of the camera'
           : x.faces > 1 ? 'Only you should be in the camera view' : 'Checking…';
-    });
+    }, { lab: !!S.info.test.proctor_lab });
     proctorOk = r.camera && r.mic && r.face && r.screen;
     if (!proctorOk) {
       mark('face', r.face ? 'ok' : 'bad');

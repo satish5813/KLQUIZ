@@ -38,6 +38,8 @@ const KINDS = {
   camera_off: [3, 'Camera was turned off or blocked'],
   mic_off: [2, 'Microphone was turned off'],
   camera_dark: [2, 'Camera covered or the room is too dark'],
+  talking: [2, 'Lips moving — candidate talking'],
+  eyes_away: [2, 'Eyes looking away from the screen'],
   // AI
   ai_person: [3, 'AI: another person is present'],
   ai_no_face: [2, 'AI: candidate not visible'],
@@ -46,6 +48,8 @@ const KINDS = {
   ai_earphones: [2, 'AI: earphones or headset worn'],
   ai_material: [2, 'AI: book, notes or paper visible'],
   ai_away: [1, 'AI: looking away from the screen'],
+  ai_neighbour: [3, 'AI: someone right beside the candidate'],
+  ai_talking: [2, 'AI: candidate talking to someone'],
   // information
   reference: [0, 'Reference photo at the start of the exam'],
   snapshot: [0, 'Routine photo'],
@@ -70,6 +74,23 @@ const PROMPT = 'Webcam frame of a student taking an online exam alone at home. A
   + 'visible; face = student\'s face clearly visible; away = student looking away from the screen (sideways, back, or down '
   + 'at something other than the keyboard); phone = mobile phone visible anywhere; device = another monitor, laptop or tablet '
   + 'visible; earphones = earphones/headset/earbuds worn; material = book, notes or written paper visible.';
+
+// Lab sessions: the background is full of students, staff and monitors; only the candidate matters.
+const LAB_SCHEMA = {
+  type: 'OBJECT',
+  properties: {
+    face: { type: 'BOOLEAN' }, near: { type: 'INTEGER' }, phone: { type: 'BOOLEAN' }, earphones: { type: 'BOOLEAN' },
+    material: { type: 'BOOLEAN' }, away: { type: 'BOOLEAN' }, talking: { type: 'BOOLEAN' },
+  },
+  required: ['face', 'near', 'phone', 'earphones', 'material', 'away', 'talking'],
+};
+const LAB_PROMPT = 'Webcam frame of a student writing an exam in a university computer lab. Other students at their own desks, '
+  + 'staff walking or standing, and computer monitors in the background are NORMAL - ignore them completely. Judge only the student '
+  + 'closest to the camera: face = that student\'s face is clearly visible; near = number of OTHER people within arm\'s reach of the '
+  + 'student (beside them or leaning in), 0 if none; phone = the student is holding or using a mobile phone (ignore phones held by '
+  + 'other people); earphones = the student wears earphones/headset/earbuds; material = book, notes or written paper on the student\'s '
+  + 'desk or in hand; away = the student is looking at a neighbour\'s screen or turned towards another person; talking = the student is '
+  + 'talking to someone.';
 
 let inFlight = 0;
 // Routine photos: one kept every 5 minutes per attempt, so the examiner can see the whole exam, not only incidents.
@@ -104,16 +125,16 @@ function addEvent(attempt, source, kind, detail = '', file = null) {
   if (sev > 0) run('UPDATE attempts SET proctor_flags = proctor_flags + 1, proctor_high = proctor_high + ? WHERE id = ?', sev === 3 ? 1 : 0, attempt.id);
 }
 
-async function askGemini(jpeg) {
+async function askGemini(jpeg, lab = false) {
   const { key } = getConfig();
   if (!key) throw new Error('Gemini API key is not configured');
   const body = {
-    contents: [{ role: 'user', parts: [{ inlineData: { mimeType: 'image/jpeg', data: jpeg.toString('base64') } }, { text: PROMPT }] }],
+    contents: [{ role: 'user', parts: [{ inlineData: { mimeType: 'image/jpeg', data: jpeg.toString('base64') } }, { text: lab ? LAB_PROMPT : PROMPT }] }],
     generationConfig: {
       temperature: 0,
       maxOutputTokens: 120,
       responseMimeType: 'application/json',
-      responseSchema: SCHEMA,
+      responseSchema: lab ? LAB_SCHEMA : SCHEMA,
       mediaResolution: 'MEDIA_RESOLUTION_LOW',
       thinkingConfig: { thinkingLevel: 'minimal' },
     },
@@ -136,8 +157,18 @@ async function askGemini(jpeg) {
 }
 
 // Maps Gemini's answer to report findings.
-function findings(v) {
+function findings(v, lab = false) {
   const f = [];
+  if (lab) {
+    if (!v.face) f.push('ai_no_face');
+    if (v.near > 0) f.push('ai_neighbour');
+    if (v.phone) f.push('ai_phone');
+    if (v.earphones) f.push('ai_earphones');
+    if (v.material) f.push('ai_material');
+    if (v.talking) f.push('ai_talking');
+    if (v.away && v.face) f.push('ai_away');
+    return f;
+  }
   if (v.persons > 1) f.push('ai_person');
   if (!v.face || v.persons === 0) f.push('ai_no_face');
   if (v.phone) f.push('ai_phone');
@@ -151,7 +182,7 @@ function findings(v) {
 // One camera frame from the candidate. reason: 'periodic' (once a minute), a browser finding (sent at once), or
 // 'reference' (start of the exam, kept for identity checks, not analysed). mode: 'ai' asks Gemini about the frame;
 // 'browser' (no API key needed) relies on the browser's own detection and only keeps the evidence.
-async function checkFrame(attempt, jpeg, reason, mode = 'ai') {
+async function checkFrame(attempt, jpeg, reason, mode = 'ai', lab = false) {
   if (reason === 'reference') {
     addEvent(attempt, 'system', 'reference', '', saveFile(attempt, 'reference', 'jpg', jpeg));
     return { alerts: [] };
@@ -171,7 +202,7 @@ async function checkFrame(attempt, jpeg, reason, mode = 'ai') {
   inFlight++;
   let r;
   try {
-    r = await askGemini(jpeg);
+    r = await askGemini(jpeg, lab);
   } catch (e) {
     health.lastError = e.message;
     health.lastErrorAt = Date.now();
@@ -188,10 +219,10 @@ async function checkFrame(attempt, jpeg, reason, mode = 'ai') {
   run(`INSERT INTO ai_usage (at, test_id, attempt_id, student_id, student_name, model, reason, tokens_in, tokens_out, cost_usd)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, new Date().toISOString(), attempt.test_id, attempt.id, attempt.student_id,
   who ? who.full_name : '', MODEL, trigger || reason, r.tokIn, r.tokOut, c);
-  const found = findings(r.verdict);
+  const found = findings(r.verdict, lab);
   if (found.length) {
     const file = triggerFile || saveFile(attempt, found[0], 'jpg', jpeg);
-    const detail = `persons ${r.verdict.persons}${trigger ? ` · checked after: ${KINDS[trigger][1]}` : ''}`;
+    const detail = `${lab ? `lab · near ${r.verdict.near}` : `persons ${r.verdict.persons}`}${trigger ? ` · checked after: ${KINDS[trigger][1]}` : ''}`;
     found.forEach((k) => addEvent(attempt, 'ai', k, detail, file));
   }
   // Looking away once is common (thinking, reading the question); only stronger findings warn the candidate.

@@ -161,6 +161,11 @@ if (!db.prepare('PRAGMA table_info(tests)').all().some((c) => c.name === 'regist
 if (!db.prepare('PRAGMA table_info(tests)').all().some((c) => c.name === 'proctor_mode')) {
   db.exec("ALTER TABLE tests ADD COLUMN proctor_mode TEXT NOT NULL DEFAULT 'offline'");
 }
+// Lab session: the exam is written in a computer lab, so other students, invigilators, monitors and room noise in the
+// background are normal and proctoring looks at the candidate only.
+if (!db.prepare('PRAGMA table_info(tests)').all().some((c) => c.name === 'proctor_lab')) {
+  db.exec('ALTER TABLE tests ADD COLUMN proctor_lab INTEGER NOT NULL DEFAULT 0');
+}
 // AI proctoring totals per attempt (Gemini calls, tokens and their cost) and the number of flagged incidents.
 if (!db.prepare('PRAGMA table_info(attempts)').all().some((c) => c.name === 'ai_calls')) {
   db.exec(`ALTER TABLE attempts ADD COLUMN ai_calls INTEGER NOT NULL DEFAULT 0;

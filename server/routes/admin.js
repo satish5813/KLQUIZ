@@ -254,6 +254,7 @@ router.put('/tests/:id', (req, res) => {
     selection_mode: b.selection_mode === 'fixed' ? 'fixed' : 'random',
     registration_mode: ['name_only', 'contact', 'application'].includes(b.registration_mode) ? b.registration_mode : 'full',
     proctor_mode: ['ai', 'browser'].includes(b.proctor_mode) ? b.proctor_mode : 'offline',
+    proctor_lab: b.proctor_lab ? 1 : 0,
     shuffle_questions: b.shuffle_questions ? 1 : 0,
     shuffle_options: b.shuffle_options ? 1 : 0,
     show_result: b.show_result ? 1 : 0,

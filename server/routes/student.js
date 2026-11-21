@@ -175,7 +175,7 @@ router.get('/exam', (req, res) => {
     test: {
       id: test.id, name: test.name, exam_code: test.exam_code, description: test.description, duration_min: test.duration_min,
       marks_correct: test.marks_correct, marks_wrong: test.marks_wrong, max_violations: test.max_violations,
-      instructions: test.instructions, state: testWindowState(test), proctor_mode: test.proctor_mode,
+      instructions: test.instructions, state: testWindowState(test), proctor_mode: test.proctor_mode, proctor_lab: !!test.proctor_lab,
       sections: sectionsWithPaper(test.id).map((x) => ({ name: x.name, question_count: x.question_count })),
     },
     attempt: a ? { status: a.status, deadline_at: a.deadline_at } : null,
@@ -305,9 +305,10 @@ function paced(key, ms) {
 }
 function proctoredAttempt(req) {
   const a = activeAttempt(req.student.id);
-  const test = get('SELECT proctor_mode FROM tests WHERE id = ?', a.test_id);
+  const test = get('SELECT proctor_mode, proctor_lab FROM tests WHERE id = ?', a.test_id);
   if (!['ai', 'browser'].includes(test.proctor_mode)) fail(400, 'This exam is not proctored online');
   a.proctor_mode = test.proctor_mode;
+  a.proctor_lab = !!test.proctor_lab;
   return a;
 }
 const b64 = (val, max, what) => {
@@ -325,7 +326,7 @@ router.post('/proctor/frame', async (req, res) => {
   if (reason === 'reference' ? paced(`${a.id}:ref`, 30000) : reason === 'periodic' ? paced(`${a.id}:frame`, 40000) : paced(`${a.id}:trigger`, 15000)) {
     return res.json({ alerts: [], paced: true });
   }
-  res.json(await proctor.checkFrame(a, jpeg, reason, a.proctor_mode));
+  res.json(await proctor.checkFrame(a, jpeg, reason, a.proctor_mode, a.proctor_lab));
 });
 
 router.post('/proctor/event', (req, res) => {

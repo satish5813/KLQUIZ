@@ -325,6 +325,7 @@
       start_at: el('input', { type: 'datetime-local', value: toLocalInput(t.start_at) }),
       end_at: el('input', { type: 'datetime-local', value: toLocalInput(t.end_at) }),
       shuffle_questions: el('input', { type: 'checkbox', checked: t.shuffle_questions }),
+      proctor_lab: el('input', { type: 'checkbox', checked: !!t.proctor_lab }),
       shuffle_options: el('input', { type: 'checkbox', checked: t.shuffle_options }),
       show_result: el('input', { type: 'checkbox', checked: t.show_result }),
       instructions: el('textarea', { rows: 9, value: t.instructions, maxlength: 8000 }),
@@ -395,7 +396,7 @@
       await api(`/api/admin/tests/${t.id}`, { method: 'PUT', body: {
         name: f.name.value, description: f.description.value, duration_min: Number(f.duration_min.value),
         marks_correct: Number(f.marks_correct.value), marks_wrong: Number(f.marks_wrong.value), max_violations: Number(f.max_violations.value),
-        mix_easy: Number(f.mix_easy.value), mix_medium: Number(f.mix_medium.value), mix_hard: Number(f.mix_hard.value), selection_mode: f.selection_mode.value, registration_mode: f.registration_mode.value, proctor_mode: f.proctor_mode.value,
+        mix_easy: Number(f.mix_easy.value), mix_medium: Number(f.mix_medium.value), mix_hard: Number(f.mix_hard.value), selection_mode: f.selection_mode.value, registration_mode: f.registration_mode.value, proctor_mode: f.proctor_mode.value, proctor_lab: f.proctor_lab.checked,
         start_at: f.start_at.value ? new Date(f.start_at.value).toISOString() : null,
         end_at: f.end_at.value ? new Date(f.end_at.value).toISOString() : null,
         shuffle_questions: f.shuffle_questions.checked, shuffle_options: f.shuffle_options.checked, show_result: f.show_result.checked,
@@ -424,6 +425,7 @@
           el('label.check', [f.shuffle_questions, 'Shuffle question order per student']),
           el('label.check', [f.shuffle_options, 'Shuffle options per student']),
           el('label.check', [f.show_result, 'Show score & rank to student after submit']),
+          el('label.check', [f.proctor_lab, 'Lab session: proctor the candidate only (ignore other students, staff, monitors and room noise; talking = lip movement)']),
         ]),
       ]),
       el('div.card', [
