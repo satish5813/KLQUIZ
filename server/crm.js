@@ -238,7 +238,13 @@ const maskEmail = (e) => (e ? e.replace(/^(.)(.*)(@.*)$/, (m, a, b, c) => `${a}$
 const maskPhone = (p) => (p ? `******${p.slice(-4)}` : '');
 
 // ---------------- views ----------------
-const baseUrl = (req) => (process.env.PUBLIC_URL || `${req.protocol}://${req.get('host')}`).replace(/\/$/, '');
+// Links handed to the CRM must be https on the public site; the app sits behind Cloudflare/ingress and sees plain http.
+const baseUrl = (req) => {
+  if (process.env.PUBLIC_URL) return process.env.PUBLIC_URL.replace(/\/$/, '');
+  const host = req.get('host') || '';
+  const local = /^(localhost|127\.|\[::1\]|[^.:]+(:\d+)?$)|\.localhost(:\d+)?$|\.test(:\d+)?$/.test(host);
+  return `${local ? req.protocol : 'https'}://${host}`;
+};
 const iso = (x) => (x ? new Date(x).toISOString() : null);
 
 function examStatus(t, now = Date.now()) {
