@@ -10,7 +10,7 @@ resources:
   - ../../live
 images:
   - name: ghcr.io/satish5813/klquiz
-    newTag: "227d5a7c2eb5"
+    newTag: "f896c93d0172"
 patches:
   - target: {kind: Ingress, name: klquiz}
     patch: |
