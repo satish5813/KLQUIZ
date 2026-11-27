@@ -22,5 +22,6 @@ spec:
   egress:
     - to: [{namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: kube-system}}}]
       ports: [{port: 53, protocol: UDP}, {port: 53, protocol: TCP}]
+    # 443: Gemini, CRM webhooks, SMS gateway; 587/465: SMTP for CRM login codes
     - to: [{ipBlock: {cidr: 0.0.0.0/0, except: [10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16]}}]
-      ports: [{port: 443}]
+      ports: [{port: 443}, {port: 587}, {port: 465}]

@@ -640,14 +640,14 @@ router.put('/crm', (req, res) => {
 router.post('/crm/credentials', (req, res) => res.json(crm.rotateCredentials()));
 
 router.post('/crm/webhook-test', async (req, res) => {
-  try { await crm.testWebhook(); } catch (e) { fail(502, `Webhook test failed: ${e.message}`); }
+  try { await crm.testWebhook(); } catch (e) { fail(422, `Webhook test failed: ${e.message}`); }
   res.json({ ok: true });
 });
 
 router.post('/crm/email-test', async (req, res) => {
   const to = v.email(req.body.to);
   if (!mailer.channels().email) fail(400, 'Save the SMTP settings first');
-  try { await mailer.sendEmail(to, 'KL exam portal: test email', 'This is a test of the login-code email for CRM candidates.'); } catch (e) { fail(502, `Email failed: ${e.message}`); }
+  try { await mailer.sendEmail(to, 'KL exam portal: test email', 'This is a test of the login-code email for CRM candidates.'); } catch (e) { fail(422, `Email failed: ${e.message}`); }
   res.json({ ok: true });
 });
 
