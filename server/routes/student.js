@@ -75,6 +75,9 @@ router.post('/register', registerLimiter, (req, res) => {
   if (test.registration_mode === 'application') {
     const appNo = v.str(b.application_no, 'Application number', { min: 3, max: 30 }).replace(/\s+/g, '').toUpperCase();
     if (!/^[A-Z0-9/-]+$/.test(appNo)) fail(400, 'Application number may contain only letters, digits, / and -');
+    if (test.app_allowlist && !test.app_allowlist.split('\n').includes(appNo)) {
+      fail(403, 'This application number is not on the list for this exam. Please check the number, or contact your KL admissions manager.');
+    }
     const key = `app:${appNo}`;
     let student = get('SELECT * FROM students WHERE test_id = ? AND email = ?', test.id, key);
     const returning = !!student;

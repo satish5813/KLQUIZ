@@ -224,6 +224,10 @@ for (const [col, def] of [
   ['public_code', 'TEXT'], ['crm_taxonomies', "TEXT NOT NULL DEFAULT ''"], ['reg_close_at', 'TEXT'],
   ['results_published_at', 'TEXT'], ['face_match', 'INTEGER NOT NULL DEFAULT 1'],
 ]) if (!tCols2.includes(col)) db.exec(`ALTER TABLE tests ADD COLUMN ${col} ${def}`);
+// Application-number exams: when this list (one number per line) is not empty, only these numbers may register.
+if (!db.prepare('PRAGMA table_info(tests)').all().some((c) => c.name === 'app_allowlist')) {
+  db.exec("ALTER TABLE tests ADD COLUMN app_allowlist TEXT NOT NULL DEFAULT ''");
+}
 db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_tests_public_code ON tests(public_code) WHERE public_code IS NOT NULL');
 
 const sCols = db.prepare('PRAGMA table_info(students)').all().map((c) => c.name);

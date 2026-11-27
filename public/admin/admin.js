@@ -343,6 +343,7 @@
       reg_close_at: el('input', { type: 'datetime-local', value: toLocalInput(t.reg_close_at) }),
       crm_taxonomies: el('textarea', { rows: 3, value: t.crm_taxonomies || '', maxlength: 4000, placeholder: 'B.Tech CSE\nB.Tech ECE' }),
       face_match: el('input', { type: 'checkbox', checked: t.face_match !== 0 }),
+      app_allowlist: el('textarea', { rows: 6, value: t.app_allowlist || '', placeholder: '270121185\n270121186' }),
       proctor_mode: el('select', [
         el('option', { value: 'offline', text: 'Offline — exam hall with invigilators (no camera)', selected: t.proctor_mode !== 'ai' }),
         el('option', { value: 'browser', text: 'Online from home — video proctoring in the browser (no AI cost)', selected: t.proctor_mode === 'browser' }),
@@ -364,6 +365,19 @@
       ]),
       el('label.check', [f.face_match, 'Face check: compare a live webcam photo with the application photo before the exam (and every 30 minutes during it)']),
     ]);
+    const allowNums = () => new Set(f.app_allowlist.value.split(/\r?\n/).map((l) => l.trim().split(/[\s,;]+/)[0]).filter(Boolean)).size;
+    const allowInfo = el('span.small.muted');
+    const countAllow = () => { const n = allowNums(); allowInfo.textContent = n ? `${n} application numbers — only these can take the exam` : 'Empty — any application number can register'; };
+    f.app_allowlist.addEventListener('input', countAllow);
+    countAllow();
+    const allowCard = el('div.card', [
+      el('div.card-title', [el('h3', { text: 'Allowed application numbers' }), allowInfo]),
+      el('p.small.muted', { text: 'Paste the application numbers from the Excel list, one per line (whole rows are fine; only the first column is used). When the list is not empty, any other number is refused at registration.' }),
+      f.app_allowlist,
+    ]);
+    const showAllow = () => allowCard.classList.toggle('hidden', f.registration_mode.value !== 'application');
+    f.registration_mode.addEventListener('change', showAllow);
+    showAllow();
     const showCrm = () => crmCard.classList.toggle('hidden', f.registration_mode.value !== 'crm');
     f.registration_mode.addEventListener('change', showCrm);
     showCrm();
@@ -419,7 +433,7 @@
         end_at: f.end_at.value ? new Date(f.end_at.value).toISOString() : null,
         shuffle_questions: f.shuffle_questions.checked, shuffle_options: f.shuffle_options.checked, show_result: f.show_result.checked,
         instructions: f.instructions.value, sections,
-        public_code: f.public_code.value, crm_taxonomies: f.crm_taxonomies.value, face_match: f.face_match.checked,
+        public_code: f.public_code.value, crm_taxonomies: f.crm_taxonomies.value, face_match: f.face_match.checked, app_allowlist: f.app_allowlist.value,
         reg_close_at: f.reg_close_at.value ? new Date(f.reg_close_at.value).toISOString() : null,
       } });
       toast('Test saved', 'success'); route();
@@ -449,6 +463,7 @@
         ]),
       ]),
       crmCard,
+      allowCard,
       el('div.card', [
         el('div.card-title', [el('h3', { text: 'Question paper moderation' }), mixInfo]),
         el('div.grid-4', [field('Easy %', f.mix_easy), field('Medium %', f.mix_medium), field('Hard (tough) %', f.mix_hard), field('Question selection', f.selection_mode)]),

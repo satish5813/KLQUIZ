@@ -189,7 +189,7 @@ const hasAttempts = (testId) => !!get('SELECT 1 FROM attempts WHERE test_id = ? 
 
 function publicTest(t) {
   const { passkey_hash, passkey_enc, ...rest } = t;
-  return { ...rest, has_passkey: !!passkey_hash };
+  return { ...rest, has_passkey: !!passkey_hash, allowlist_count: t.app_allowlist ? t.app_allowlist.split('\n').length : 0 };
 }
 
 router.get('/tests', (req, res) => {
@@ -271,6 +271,14 @@ router.put('/tests/:id', (req, res) => {
   }
   if (b.crm_taxonomies !== undefined) {
     fields.crm_taxonomies = v.str(b.crm_taxonomies, 'CRM courses', { required: false, max: 4000 }).split('\n').map((x) => x.trim()).filter(Boolean).join('\n');
+  }
+  // Allowed application numbers: pasted one per line (extra columns such as the name are ignored).
+  if (b.app_allowlist !== undefined) {
+    const nums = String(b.app_allowlist || '').split(/\r?\n/).map((l) => l.trim().split(/[\s,;]+/)[0].toUpperCase()).filter(Boolean);
+    const bad = nums.find((n) => !/^[A-Z0-9/-]{3,30}$/.test(n));
+    if (bad) fail(400, `Allowed application numbers: "${bad.slice(0, 40)}" is not a valid application number`);
+    if (nums.length > 50000) fail(400, 'Allowed application numbers: at most 50,000');
+    fields.app_allowlist = [...new Set(nums)].join('\n');
   }
   if (b.reg_close_at !== undefined) fields.reg_close_at = v.isoDate(b.reg_close_at, 'Registration closes');
   if (b.face_match !== undefined) fields.face_match = b.face_match ? 1 : 0;
