@@ -139,3 +139,6 @@ body.exam #examView { display: flex; flex-direction: column; height: 100%; }
 @media (min-width: 900px) { .proc-pip { width: 150px; left: 14px; bottom: 14px; } }
 .proc-alert { position: fixed; top: 70px; left: 50%; transform: translateX(-50%); z-index: 940; max-width: min(92vw, 640px); width: max-content;
   background: var(--kl-red); color: #fff; padding: 10px 16px; border-radius: 10px; font-weight: 600; box-shadow: 0 8px 24px rgba(0, 0, 0, .25); }
+
+/* Applicant (CRM) login: camera preview for the face check */
+.face-cam video { width: 100%; max-width: 480px; aspect-ratio: 4 / 3; display: block; margin: 12px auto; border-radius: 12px; background: #111; transform: scaleX(-1); object-fit: cover; }

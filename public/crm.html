@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Applicant login · KL Admissions Entrance Examinations 2027</title>
+  <link rel="icon" href="/img/klu-logo.webp">
+  <link rel="stylesheet" href="/css/style.css">
+  <link rel="stylesheet" href="/css/student.css">
+</head>
+<body>
+  <header class="topbar brand">
+    <a class="campus campus-l" href="/" aria-label="KL University, Hyderabad"><img src="/img/klh-logo.png" alt="KL University, Hyderabad" class="logo"><span>Hyderabad</span></a>
+    <div class="title">KL Admissions Entrance Examinations 2027<small>Online Examination Portal</small></div>
+    <div class="spacer"></div>
+    <span class="campus campus-r"><img src="/img/klu-logo.webp" alt="KL University, Vijayawada" class="logo"><span>Vijayawada</span></span>
+  </header>
+
+  <section class="hero">
+    <div class="container">
+      <h1>Applicant login</h1>
+      <p>Log in with the one-time code sent to your registered email or mobile, verify your face, and begin your examination.</p>
+      <ol class="flow"><li class="on" id="f1">Login code</li><li id="f2">Face check</li><li id="f3">Instructions</li><li id="f4">Exam</li><li id="f5">Result</li></ol>
+    </div>
+  </section>
+
+  <main class="container narrow">
+    <div id="err" class="alert error hidden" role="alert"></div>
+    <div id="info" class="alert success hidden" role="status"></div>
+
+    <!-- Without a personal link: find the registration by email or mobile -->
+    <form id="findForm" class="card hidden" autocomplete="on" novalidate>
+      <h2>Find your registration</h2>
+      <div class="field">
+        <label for="test">Examination</label>
+        <select id="test" required></select>
+      </div>
+      <div class="field"><label for="login">Registered email or mobile number</label>
+        <input id="login" type="text" required maxlength="254" autocomplete="email" placeholder="you@example.com or 10-digit mobile"></div>
+      <button class="btn block lg" type="submit" id="findBtn">Continue</button>
+    </form>
+
+    <!-- Candidate found: send and enter the code -->
+    <form id="otpForm" class="card hidden" autocomplete="off" novalidate>
+      <h2 id="hello">Welcome</h2>
+      <p class="muted" id="examLine"></p>
+      <button class="btn block lg" type="button" id="sendBtn">Send login code</button>
+      <div id="codeBox" class="hidden mt">
+        <p class="small" id="sentTo"></p>
+        <div class="field"><label for="otp">6-digit login code</label>
+          <input id="otp" type="text" inputmode="numeric" maxlength="6" pattern="[0-9]{6}" autocomplete="one-time-code" class="passkey-input" spellcheck="false"></div>
+        <button class="btn block lg" type="submit" id="verifyBtn">Verify &amp; continue</button>
+        <button class="btn ghost block mt" type="button" id="resendBtn">Send a new code</button>
+      </div>
+    </form>
+
+    <!-- Face check against the applicant photo -->
+    <div id="faceCard" class="card hidden">
+      <h2>Face check</h2>
+      <p class="muted">Sit in good light, look straight at the camera, and remove caps or masks. Your photo is compared with the photo in your application.</p>
+      <div class="face-cam"><video id="cam" autoplay playsinline muted></video></div>
+      <p class="small" id="faceMsg"></p>
+      <button class="btn block lg" type="button" id="faceBtn" disabled>Take photo &amp; verify</button>
+    </div>
+
+    <div id="doneCard" class="card hidden">
+      <h2 id="doneTitle"></h2>
+      <p class="muted" id="doneText"></p>
+    </div>
+  </main>
+  <footer class="footer">© KL University (Deemed to be University) · Koneru Lakshmaiah Education Foundation · Vijayawada · Hyderabad</footer>
+  <script src="/js/common.js"></script>
+  <script src="/js/crm.js"></script>
+</body>
+</html>

@@ -146,7 +146,10 @@ function finalize(attemptId, reason) {
     run(`UPDATE attempts SET status = 'submitted', submitted_at = ?, score = ?, correct = ?, wrong = ?, unanswered = ?,
            section_scores = ?, submit_reason = ? WHERE id = ?`,
     submittedAt, g.score, g.correct, g.wrong, g.unanswered, JSON.stringify(g.sections), reason, a.id);
-    return get('SELECT * FROM attempts WHERE id = ?', a.id);
+    const done = get('SELECT * FROM attempts WHERE id = ?', a.id);
+    // CRM candidates: queue the 'attempt.submitted' webhook (loaded lazily: crm.js depends on this module).
+    require('./crm').onSubmitted(done);
+    return done;
   });
 }
 

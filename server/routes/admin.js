@@ -12,6 +12,9 @@ const {
 } = require('../exam');
 const { DEFAULT_INSTRUCTIONS, bankCode } = require('../seed');
 const proctor = require('../proctor');
+const crm = require('../crm');
+const mailer = require('../mailer');
+const { testWindowState } = require('../exam');
 
 const router = express.Router();
 const SESSION_HOURS = 8;
@@ -252,7 +255,7 @@ router.put('/tests/:id', (req, res) => {
     mix_medium: v.int(b.mix_medium, 'Medium %', { min: 0, max: 100 }),
     mix_hard: v.int(b.mix_hard, 'Hard %', { min: 0, max: 100 }),
     selection_mode: b.selection_mode === 'fixed' ? 'fixed' : 'random',
-    registration_mode: ['name_only', 'contact', 'application'].includes(b.registration_mode) ? b.registration_mode : 'full',
+    registration_mode: ['name_only', 'contact', 'application', 'crm'].includes(b.registration_mode) ? b.registration_mode : 'full',
     proctor_mode: ['ai', 'browser'].includes(b.proctor_mode) ? b.proctor_mode : 'offline',
     proctor_lab: b.proctor_lab ? 1 : 0,
     shuffle_questions: b.shuffle_questions ? 1 : 0,
@@ -260,6 +263,20 @@ router.put('/tests/:id', (req, res) => {
     show_result: b.show_result ? 1 : 0,
     instructions: v.str(b.instructions, 'Instructions', { required: false, max: 8000 }),
   };
+  // Edmission CRM exams: the exam code the CRM uses, the CRM courses mapped to this exam, the registration cut-off.
+  if (b.public_code !== undefined) {
+    const code = String(b.public_code || '').trim().toUpperCase();
+    if (code && !/^[A-Z0-9-]{3,40}$/.test(code)) fail(400, 'CRM exam code: 3-40 letters, digits or hyphens');
+    fields.public_code = code || null;
+  }
+  if (b.crm_taxonomies !== undefined) {
+    fields.crm_taxonomies = v.str(b.crm_taxonomies, 'CRM courses', { required: false, max: 4000 }).split('\n').map((x) => x.trim()).filter(Boolean).join('\n');
+  }
+  if (b.reg_close_at !== undefined) fields.reg_close_at = v.isoDate(b.reg_close_at, 'Registration closes');
+  if (b.face_match !== undefined) fields.face_match = b.face_match ? 1 : 0;
+  if (fields.registration_mode === 'crm' && !(fields.public_code ?? t.public_code)) fail(400, 'Set the CRM exam code (e.g. KLEEE-2027-S2) for a CRM exam');
+  if (fields.reg_close_at && fields.end_at && fields.reg_close_at > fields.end_at) fail(400, 'Registration must close before the exam window closes');
+  if (fields.public_code && get('SELECT 1 FROM tests WHERE public_code = ? AND id <> ?', fields.public_code, t.id)) fail(409, 'That CRM exam code is already used by another test');
   checkWindow(fields.start_at, fields.end_at, fields.duration_min);
   if (fields.mix_easy + fields.mix_medium + fields.mix_hard !== 100) fail(400, 'Easy + Medium + Hard must add up to 100%');
   if (locked && ['mix_easy', 'mix_medium', 'mix_hard', 'selection_mode'].some((k) => fields[k] !== t[k])) {
@@ -306,7 +323,9 @@ router.post('/tests/:id/status', (req, res) => {
   const status = req.body.status;
   if (!['draft', 'live', 'closed'].includes(status)) fail(400, 'Invalid status');
   if (status === 'live') {
-    if (!t.passkey_hash) fail(409, 'Generate a pass key before going live');
+    if (t.registration_mode === 'crm') {
+      if (!t.public_code) fail(409, 'Set the CRM exam code before going live');
+    } else if (!t.passkey_hash) fail(409, 'Generate a pass key before going live');
     const secs = sectionsWithPaper(t.id);
     if (t.selection_mode === 'random') {
       const short = secs.map((s) => ({ s, b: bankStatus(t, s) })).filter((x) => !x.b.enough);
@@ -549,6 +568,7 @@ router.get('/tests/:id/students', (req, res) => {
   const t = loadTest(req.params.id);
   finalizeExpired(t.id);
   res.json(all(`SELECT s.id, s.full_name, s.address, s.email, s.mobile, s.parent_mobile, s.created_at, s.reg_ip,
+      s.crm_id, s.application_no, s.taxonomy, s.payment_at, s.revoked, s.face_status, s.face_tries, s.photo_file IS NOT NULL AS has_photo, s.face_file IS NOT NULL AS has_face_photo,
       a.id AS attempt_id, a.status AS attempt_status, a.started_at, a.submitted_at, a.score, a.violations
     FROM students s LEFT JOIN attempts a ON a.student_id = s.id WHERE s.test_id = ? ORDER BY s.id DESC`, t.id));
 });
@@ -569,6 +589,104 @@ router.post('/attempts/:id/reset', (req, res) => {
 router.post('/attempts/:id/submit', (req, res) => {
   finalize(v.int(req.params.id, 'id', { min: 1 }), 'admin_forced');
   res.json({ ok: true });
+});
+
+// ---------------- Edmission CRM ----------------
+router.get('/crm', (req, res) => {
+  const c = crm.partnerConfig();
+  const smtp = mailer.smtpConfig();
+  const count = (w) => get(`SELECT COUNT(*) c FROM crm_outbox WHERE ${w}`).c;
+  res.json({
+    configured: !!c.keyHash, key_hint: c.keyHint, key_created: c.createdAt, ips: c.ips.join('\n'), webhook: c.webhook,
+    base_url: crm.baseUrl(req) + '/api/v1/partner',
+    smtp: { host: smtp.host, port: smtp.port, user: smtp.user, from: smtp.from, pass_set: !!smtp.pass },
+    sms_set: !!mailer.smsConfig().url,
+    channels: mailer.channels(),
+    outbox: { pending: count('sent_at IS NULL AND failed = 0'), sent: count('sent_at IS NOT NULL'), failed: count('failed = 1') },
+    failures: all('SELECT id, event, crm_id, tries, last_error, created_at FROM crm_outbox WHERE failed = 1 OR (sent_at IS NULL AND tries > 0) ORDER BY id DESC LIMIT 20'),
+    log: all('SELECT at, method, path, status, ip, error FROM crm_log ORDER BY id DESC LIMIT 50'),
+  });
+});
+
+router.put('/crm', (req, res) => {
+  const b = req.body;
+  if (b.ips !== undefined) {
+    const ips = String(b.ips || '').split(/[\s,]+/).filter(Boolean);
+    if (ips.some((ip) => !/^[0-9a-f:.]{3,45}$/i.test(ip))) fail(400, 'Allowed IPs: one IP address per line');
+    crm.setSetting('partner_ips', ips.join(','));
+  }
+  if (b.webhook !== undefined) {
+    const u = String(b.webhook || '').trim();
+    if (u && !/^https:\/\/[^\s]+$/i.test(u) && !(process.env.NODE_ENV !== 'production' && /^http:\/\/[^\s]+$/i.test(u))) fail(400, 'Webhook URL must start with https://');
+    crm.setSetting('partner_webhook', u ? encrypt(u) : '');
+  }
+  if (b.smtp) {
+    const m = b.smtp;
+    crm.setSetting('smtp_host', v.str(m.host, 'SMTP host', { required: false, max: 200 }));
+    crm.setSetting('smtp_port', m.port ? String(v.int(m.port, 'SMTP port', { min: 1, max: 65535 })) : '');
+    crm.setSetting('smtp_user', v.str(m.user, 'SMTP user', { required: false, max: 200 }));
+    crm.setSetting('smtp_from', v.str(m.from, 'From address', { required: false, max: 200 }));
+    if (m.pass) crm.setSetting('smtp_pass', encrypt(String(m.pass)));
+  }
+  if (b.sms_url !== undefined) {
+    const u = String(b.sms_url || '').trim();
+    if (u && (!/^https?:\/\/\S+$/i.test(u) || !u.includes('{mobile}'))) fail(400, 'SMS gateway URL must be http(s) and contain {mobile} and {message} or {otp}');
+    crm.setSetting('sms_url', u ? encrypt(u) : '');
+  }
+  res.json({ ok: true });
+});
+
+// New API key + signing secret (shown once). The old key stops working at once.
+router.post('/crm/credentials', (req, res) => res.json(crm.rotateCredentials()));
+
+router.post('/crm/webhook-test', async (req, res) => {
+  try { await crm.testWebhook(); } catch (e) { fail(502, `Webhook test failed: ${e.message}`); }
+  res.json({ ok: true });
+});
+
+router.post('/crm/email-test', async (req, res) => {
+  const to = v.email(req.body.to);
+  if (!mailer.channels().email) fail(400, 'Save the SMTP settings first');
+  try { await mailer.sendEmail(to, 'KL exam portal: test email', 'This is a test of the login-code email for CRM candidates.'); } catch (e) { fail(502, `Email failed: ${e.message}`); }
+  res.json({ ok: true });
+});
+
+router.post('/crm/outbox/retry', (req, res) => {
+  const r = run("UPDATE crm_outbox SET failed = 0, next_at = ? WHERE sent_at IS NULL", new Date().toISOString());
+  crm.flushOutbox().catch(() => {});
+  res.json({ ok: true, requeued: Number(r.changes) });
+});
+
+router.get('/tests/:id/crm', (req, res) => {
+  const t = loadTest(req.params.id);
+  const count = (w) => get(`SELECT COUNT(*) c FROM crm_outbox WHERE test_id = ? AND ${w}`, t.id).c;
+  const st = (w) => get(`SELECT COUNT(*) c FROM students WHERE test_id = ? AND crm_id IS NOT NULL AND ${w}`, t.id).c;
+  res.json({
+    published_at: t.results_published_at,
+    candidates: st('1'), revoked: st('revoked = 1'), face: { passed: st("face_status = 'passed'"), review: st("face_status = 'review'"), failed: st("face_status = 'failed'") },
+    outbox: { pending: count('sent_at IS NULL AND failed = 0'), sent: count('sent_at IS NOT NULL'), failed: count('failed = 1') },
+  });
+});
+
+// Sends every CRM candidate's marks (or 'absent') to the CRM webhook. Allowed once the exam window is over or the
+// test is closed; publishing again re-sends the marks (e.g. after a correction).
+router.post('/tests/:id/crm/publish', (req, res) => {
+  const t = loadTest(req.params.id);
+  if (t.registration_mode !== 'crm') fail(400, 'This is not a CRM exam');
+  const over = t.status === 'closed' || testWindowState(t) === 'ended';
+  if (!over) fail(409, 'Close the test (or wait for the exam window to end) before publishing results');
+  finalizeExpired(t.id);
+  const n = crm.publishResults(t);
+  crm.flushOutbox().catch(() => {});
+  res.json({ ok: true, queued: n });
+});
+
+router.get('/students/:id/photo', (req, res) => {
+  const st = get('SELECT photo_file, face_file FROM students WHERE id = ?', v.int(req.params.id, 'id', { min: 1 })) || fail(404, 'Student not found');
+  const abs = req.query.live ? st.face_file && proctor.fileFor(st.face_file) : crm.photoPath(st.photo_file);
+  if (!abs) fail(404, 'No photo');
+  res.set('Cache-Control', 'private, max-age=600');
+  res.sendFile(abs);
 });
 
 // ---------------- AI proctoring report ----------------

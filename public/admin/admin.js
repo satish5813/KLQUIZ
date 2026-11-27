@@ -337,7 +337,12 @@
         el('option', { value: 'contact', text: 'Name, email and mobile', selected: t.registration_mode === 'contact' }),
         el('option', { value: 'application', text: 'Name and application number', selected: t.registration_mode === 'application' }),
         el('option', { value: 'name_only', text: 'Name only (trial / practice session)', selected: t.registration_mode === 'name_only' }),
+        el('option', { value: 'crm', text: 'Edmission CRM applicants only (login code + face check)', selected: t.registration_mode === 'crm' }),
       ]),
+      public_code: el('input', { type: 'text', value: t.public_code || '', maxlength: 40, placeholder: 'e.g. KLEEE-2027-S2' }),
+      reg_close_at: el('input', { type: 'datetime-local', value: toLocalInput(t.reg_close_at) }),
+      crm_taxonomies: el('textarea', { rows: 3, value: t.crm_taxonomies || '', maxlength: 4000, placeholder: 'B.Tech CSE\nB.Tech ECE' }),
+      face_match: el('input', { type: 'checkbox', checked: t.face_match !== 0 }),
       proctor_mode: el('select', [
         el('option', { value: 'offline', text: 'Offline — exam hall with invigilators (no camera)', selected: t.proctor_mode !== 'ai' }),
         el('option', { value: 'browser', text: 'Online from home — video proctoring in the browser (no AI cost)', selected: t.proctor_mode === 'browser' }),
@@ -349,6 +354,19 @@
       ]),
     };
     const mixInfo = el('div.small');
+    const crmCard = el('div.card', [
+      el('h3', { text: 'Edmission CRM' }),
+      el('p.small.muted', { text: 'Only applicants pushed by the CRM (paid) can take this exam. They log in with a one-time code sent to their registered email / mobile; no pass key. Set up the API key, webhook and email in Settings → CRM integration.' }),
+      el('div.grid-3', [
+        field('CRM exam code', f.public_code, 'The exam_code the CRM sends. Letters, digits and hyphens.'),
+        field('Registration closes', f.reg_close_at, 'Last date for the CRM to add students. After it the list is fixed.'),
+        field('CRM courses (taxonomy), one per line', f.crm_taxonomies, 'Lets the CRM send just the course; it must match the CRM text exactly.'),
+      ]),
+      el('label.check', [f.face_match, 'Face check: compare a live webcam photo with the application photo before the exam (and every 30 minutes during it)']),
+    ]);
+    const showCrm = () => crmCard.classList.toggle('hidden', f.registration_mode.value !== 'crm');
+    f.registration_mode.addEventListener('change', showCrm);
+    showCrm();
     const mixTable = el('tbody');
     // Mirrors mixCounts() on the server so the admin sees exactly what each student will get.
     const renderMix = () => {
@@ -401,6 +419,8 @@
         end_at: f.end_at.value ? new Date(f.end_at.value).toISOString() : null,
         shuffle_questions: f.shuffle_questions.checked, shuffle_options: f.shuffle_options.checked, show_result: f.show_result.checked,
         instructions: f.instructions.value, sections,
+        public_code: f.public_code.value, crm_taxonomies: f.crm_taxonomies.value, face_match: f.face_match.checked,
+        reg_close_at: f.reg_close_at.value ? new Date(f.reg_close_at.value).toISOString() : null,
       } });
       toast('Test saved', 'success'); route();
     })));
@@ -428,6 +448,7 @@
           el('label.check', [f.proctor_lab, 'Lab session: proctor the candidate only (ignore other students, staff, monitors and room noise; talking = lip movement)']),
         ]),
       ]),
+      crmCard,
       el('div.card', [
         el('div.card-title', [el('h3', { text: 'Question paper moderation' }), mixInfo]),
         el('div.grid-4', [field('Easy %', f.mix_easy), field('Medium %', f.mix_medium), field('Hard (tough) %', f.mix_hard), field('Question selection', f.selection_mode)]),
@@ -701,6 +722,7 @@
 
   // ----- access / pass key -----
   async function tabAccess(t, body) {
+    if (t.registration_mode === 'crm') return tabAccessCrm(t, body);
     const pk = t.has_passkey ? (await api(`/api/admin/tests/${t.id}/passkey`)).passkey : null;
     const shown = el('span.passkey', { text: pk ? '••••••••' : 'Not set' });
     let visible = false;
@@ -746,9 +768,43 @@
       ]),
     );
   }
+  async function tabAccessCrm(t, body) {
+    const c = await api(`/api/admin/tests/${t.id}/crm`);
+    const random = t.selection_mode === 'random';
+    const ready = random ? t.sections.every((s) => s.bank.enough) : t.sections.every((s) => s.paper_count >= s.question_count);
+    body.append(el('div.grid-2', [
+      el('div.card', [
+        el('h3', { text: 'CRM exam' }),
+        el('p.muted.small', { text: 'Candidates come only from the Edmission CRM. Each gets a personal exam link (/e/…) and logs in with a one-time code; there is no pass key.' }),
+        el('ul.checklist', [
+          check(!!t.public_code, `CRM exam code: ${t.public_code || 'not set'}`),
+          check(!!t.reg_close_at, t.reg_close_at ? `Registration closes ${fmtDate(t.reg_close_at)}` : 'No registration cut-off (CRM can add students until the exam ends)'),
+          check(c.candidates > 0, `${c.candidates} candidates from the CRM${c.revoked ? ` (${c.revoked} revoked)` : ''}`),
+          check(true, t.face_match ? `Face check on · passed ${c.face.passed} · review ${c.face.review} · mismatch ${c.face.failed}` : 'Face check off'),
+        ]),
+        el('p.small.mt', ['Applicant login without a link: ', el('a', { href: `${location.origin}/crm?test=${t.id}`, target: '_blank', rel: 'noopener', text: `${location.origin}/crm?test=${t.id}` })]),
+      ]),
+      el('div.card', [
+        el('h3', { text: 'Go-live checklist' }),
+        el('ul.checklist', [
+          check(t.sections.every((s) => s.syllabus), 'Syllabus set for every section'),
+          random
+            ? check(ready, `Approved bank covers every section (${t.sections.map((s) => `${s.name} ${s.bank.total}/${s.question_count}`).join(', ')})`)
+            : check(ready, `Question paper complete (${t.sections.map((s) => `${s.name} ${s.paper_count}/${s.question_count}`).join(', ')})`),
+          check(!!t.start_at, t.start_at ? `Exam opens only in its window: ${fmtDate(t.start_at)} → ${fmtDate(t.end_at)}` : 'No schedule set'),
+        ]),
+        el('div.row.mt', [
+          t.status !== 'live' ? el('button.btn.green.lg', { type: 'button', text: '● Go live', disabled: !ready || !t.public_code, onclick: () => setStatus(t, 'live') }) : el('span.badge.live', { text: 'LIVE' }),
+          t.status === 'live' ? el('button.btn.danger', { type: 'button', text: 'Close test', onclick: () => setStatus(t, 'closed') }) : null,
+        ]),
+        el('p.small.muted.mt', { text: 'Going live early is safe: candidates can log in only between the window start and end.' }),
+      ]),
+    ]));
+  }
   const check = (ok, text) => el('li', [el(`span.${ok ? 'ok' : 'no'}`, { text: ok ? '✔ ' : '✘ ' }), text]);
 
   // ----- students -----
+  const faceBadge = (st) => (st && st !== 'pending' ? el(`span.badge.${st === 'passed' ? 'approved' : st === 'review' ? 'pending' : 'red'}`, { text: `FACE ${st.toUpperCase()}` }) : el('span.badge', { text: 'FACE NOT CHECKED' }));
   async function tabStudents(t, body) {
     const rows = await api(`/api/admin/tests/${t.id}/students`);
     const filter = el('input', { type: 'search', placeholder: 'Filter by name, email or mobile…' });
@@ -758,7 +814,11 @@
       clear(tbody).append(...rows.filter((s) => !q || `${s.full_name} ${s.email} ${s.mobile}`.toLowerCase().includes(q)).map((s) => el('tr', [
         el('td', { text: s.id }),
         el('td', [el('b', { text: s.full_name }), el('div.small.muted', { text: s.address })]),
-        el('td', appNo(s.email) ? el('div', { text: `Application No ${appNo(s.email)}` }) : isNameOnly(s.email) ? el('span.muted', { text: 'name only (trial)' }) : [el('div', { text: s.email }), el('div.small', { text: `📱 ${s.mobile} · Parent ${s.parent_mobile}` })]),
+        el('td', s.crm_id ? [el('div', { text: `${s.application_no} · ${s.taxonomy || ''}` }), el('div.small', { text: `${s.email} · 📱 ${s.mobile}` }), el('div.small.row', [
+          s.revoked ? el('span.badge.red', { text: 'REVOKED' }) : null, faceBadge(s.face_status),
+          s.has_photo ? el('a', { href: `/api/admin/students/${s.id}/photo`, target: '_blank', rel: 'noopener', text: 'application photo' }) : null,
+          s.has_face_photo ? el('a', { href: `/api/admin/students/${s.id}/photo?live=1`, target: '_blank', rel: 'noopener', text: 'live photo' }) : null,
+        ])] : appNo(s.email) ? el('div', { text: `Application No ${appNo(s.email)}` }) : isNameOnly(s.email) ? el('span.muted', { text: 'name only (trial)' }) : [el('div', { text: s.email }), el('div.small', { text: `📱 ${s.mobile} · Parent ${s.parent_mobile}` })]),
         el('td', s.attempt_status ? badge(s.attempt_status) : el('span.badge', { text: 'NOT STARTED' })),
         el('td', { text: s.score ?? '—' }),
         el('td', { text: s.violations ?? '—' }),
@@ -794,6 +854,20 @@
   // ----- results -----
   async function tabResults(t, body) {
     const r = await api(`/api/admin/tests/${t.id}/results`);
+    if (t.registration_mode === 'crm') {
+      const c = await api(`/api/admin/tests/${t.id}/crm`);
+      const pub = el('button.btn.green', { type: 'button', text: c.published_at ? 'Send marks to CRM again' : 'Publish results to Edmission CRM' });
+      pub.addEventListener('click', handle(async () => {
+        if (!(await confirmBox('Publish results', `Send the marks of all ${c.candidates - c.revoked} CRM candidates (absent ones as "absent") to the Edmission CRM?`, 'Publish'))) return;
+        const x = await api(`/api/admin/tests/${t.id}/crm/publish`, { method: 'POST' });
+        toast(`${x.queued} results queued for the CRM`, 'success'); route();
+      }));
+      body.append(el('div.card', [
+        el('div.card-title', [el('h3', { text: 'Edmission CRM' }), pub]),
+        el('p.small', { text: `${c.published_at ? `Published ${fmtDate(c.published_at)}` : 'Not published yet'} · webhook deliveries: ${c.outbox.sent} sent, ${c.outbox.pending} waiting, ${c.outbox.failed} failed` }),
+        el('p.small.muted', { text: 'Publish after the test is closed or the exam window has ended. Each candidate is also reported to the CRM when they submit (without marks).' }),
+      ]));
+    }
     const rs = r.results;
     const avg = rs.length ? rs.reduce((a, x) => a + x.score, 0) / rs.length : 0;
     const secNames = t.sections.map((s) => s.name);
@@ -1045,8 +1119,10 @@
       await api('/api/admin/password', { method: 'POST', body: { current: cur.value, next: nw.value } });
       toast('Password changed. Other sessions were signed out.', 'success'); cur.value = nw.value = nw2.value = '';
     })));
+    const crmCard = await crmSettings();
     clear(view).append(
       pageHead('Settings'),
+      crmCard,
       el('div.card', [
         el('h3', { text: 'Google Gemini' }),
         el('p.small.muted', ['Get a key from ', el('a', { href: 'https://aistudio.google.com/apikey', target: '_blank', rel: 'noopener', text: 'Google AI Studio' }), '. It is stored encrypted on the server and never sent to browsers.']),
@@ -1062,6 +1138,63 @@
         pw,
       ]),
     );
+  }
+
+  async function crmSettings() {
+    const c = await api('/api/admin/crm');
+    const ips = el('textarea', { rows: 3, value: c.ips, placeholder: 'One IP address per line (empty = any address)' });
+    const hook = el('input', { type: 'url', value: c.webhook, placeholder: 'https://crm.example.com/kl/webhook' });
+    const sm = {
+      host: el('input', { type: 'text', value: c.smtp.host, placeholder: 'smtp.gmail.com' }),
+      port: el('input', { type: 'number', value: c.smtp.port || 587 }),
+      user: el('input', { type: 'text', value: c.smtp.user, autocomplete: 'off' }),
+      pass: el('input', { type: 'password', placeholder: c.smtp.pass_set ? 'saved (leave blank to keep)' : '', autocomplete: 'new-password' }),
+      from: el('input', { type: 'text', value: c.smtp.from, placeholder: 'KL Admissions <admissions@kluniversity.in>' }),
+    };
+    const sms = el('input', { type: 'text', placeholder: c.sms_set ? 'saved (leave blank to keep)' : 'https://gateway/send?to={mobile}&msg={message}' });
+    const save = el('button.btn', { type: 'button', text: 'Save CRM settings' });
+    save.addEventListener('click', handle(() => withBusy(save, async () => {
+      const b = { ips: ips.value, webhook: hook.value, smtp: { host: sm.host.value, port: sm.port.value, user: sm.user.value, from: sm.from.value, pass: sm.pass.value } };
+      if (sms.value) b.sms_url = sms.value;
+      await api('/api/admin/crm', { method: 'PUT', body: b });
+      toast('CRM settings saved', 'success'); route();
+    })));
+    const keyBtn = el('button.btn.purple', { type: 'button', text: c.configured ? 'Rotate API key' : 'Generate API key' });
+    keyBtn.addEventListener('click', handle(async () => {
+      if (c.configured && !(await confirmBox('Rotate API key', 'The current key stops working at once. Give the new key and secret to Edmission.', 'Rotate', 'danger'))) return;
+      const k = await api('/api/admin/crm/credentials', { method: 'POST' });
+      modal({ title: 'Partner API credentials', body: [
+        el('p', { text: 'Copy both now: they are shown only once. Share them with Edmission over a secure channel, not by email.' }),
+        field('API key (Authorization: Bearer …)', el('input', { type: 'text', value: k.key, readonly: true })),
+        field('Signing secret (HMAC-SHA256)', el('input', { type: 'text', value: k.secret, readonly: true })),
+      ], actions: [{ label: 'Done', onClick: (close) => { close(); route(); } }] });
+    }));
+    const testHook = el('button.btn.secondary', { type: 'button', text: 'Test webhook' });
+    testHook.addEventListener('click', handle(() => withBusy(testHook, async () => { await api('/api/admin/crm/webhook-test', { method: 'POST' }); toast('Webhook answered OK', 'success'); })));
+    const mailTo = el('input', { type: 'email', placeholder: 'your email' });
+    const testMail = el('button.btn.secondary', { type: 'button', text: 'Send test email' });
+    testMail.addEventListener('click', handle(() => withBusy(testMail, async () => { await api('/api/admin/crm/email-test', { method: 'POST', body: { to: mailTo.value } }); toast('Test email sent', 'success'); })));
+    const retry = el('button.btn.secondary.sm', { type: 'button', text: 'Retry failed deliveries', onclick: handle(async () => { const r = await api('/api/admin/crm/outbox/retry', { method: 'POST' }); toast(`${r.requeued} requeued`, 'success'); route(); }) });
+    return el('div.card', [
+      el('h3', { text: 'CRM integration (Edmission)' }),
+      el('div', { text: c.configured ? `API enabled · key …${c.key_hint} created ${fmtDate(c.key_created)}` : 'API not enabled: generate a key', class: c.configured ? 'alert success' : 'alert warn' }),
+      el('p.small', ['Base URL: ', el('code', { text: c.base_url })]),
+      el('div.row.mb', [keyBtn]),
+      el('div.grid-2', [field('Allowed caller IPs', ips, 'Edmission\'s static outbound IPs. Empty = any IP (not recommended in production).'), field('Webhook URL for marks', hook, 'Signed with the same secret (X-KL-Signature).')]),
+      el('h4', { text: 'Login codes (OTP)' }),
+      el('div', { text: c.channels.email || c.channels.sms ? `Sending by ${[c.channels.email && 'email', c.channels.sms && 'SMS'].filter(Boolean).join(' and ')}` : 'No email or SMS set up: applicants cannot receive login codes', class: c.channels.email || c.channels.sms ? 'alert success' : 'alert warn' }),
+      el('div.grid-3', [field('SMTP host', sm.host), field('Port', sm.port, '587 (STARTTLS) or 465 (SSL)'), field('From address', sm.from)]),
+      el('div.grid-3', [field('SMTP user', sm.user), field('SMTP password', sm.pass), field('SMS gateway URL (optional)', sms, 'DLT-registered gateway; {mobile} and {message} are filled in.')]),
+      el('div.row', [save, testHook, el('div.grow', mailTo), testMail]),
+      el('h4.mt', { text: `Webhook deliveries: ${c.outbox.sent} sent · ${c.outbox.pending} waiting · ${c.outbox.failed} failed` }),
+      c.failures.length ? el('div.table-wrap', el('table.table', [el('thead', el('tr', ['Event', 'Candidate', 'Tries', 'Last error'].map((h) => el('th', { text: h })))),
+        el('tbody', c.failures.map((x) => el('tr', [el('td', { text: x.event }), el('td', { text: x.crm_id }), el('td', { text: x.tries }), el('td.small', { text: x.last_error || '' })])))])) : null,
+      c.outbox.failed ? retry : null,
+      el('details.mt', [el('summary', { text: `Recent API calls (${c.log.length})` }), el('div.table-wrap', el('table.table', [
+        el('thead', el('tr', ['Time', 'Call', 'Status', 'IP', 'Error'].map((h) => el('th', { text: h })))),
+        el('tbody', c.log.map((x) => el('tr', [el('td.small', { text: fmtDate(x.at) }), el('td.small', { text: `${x.method} ${x.path}` }), el('td', { text: x.status }), el('td.small', { text: x.ip }), el('td.small', { text: x.error || '' })]))),
+      ]))]),
+    ]);
   }
 
   boot();

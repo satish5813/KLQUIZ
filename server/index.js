@@ -43,6 +43,7 @@ const { csrfGuard, HttpError, verify } = require('./security');
 const traffic = require('./traffic');
 
 seed();
+require('./crm').startWorker();
 
 const app = express();
 app.disable('x-powered-by');
@@ -108,6 +109,9 @@ app.use('/api', rateLimit({
   message: { error: 'Too many requests. Please wait a moment.' },
 }));
 app.use('/api', (req, res, next) => { res.setHeader('Cache-Control', 'no-store'); next(); });
+// Edmission CRM partner API: server-to-server, signed requests (its own JSON parser keeps the raw body for the
+// signature, and it needs no CSRF header). Mounted before the browser API's parser and CSRF guard.
+app.use('/api/v1/partner', require('./routes/partner'));
 app.use(express.json({ limit: '5mb' }));
 app.use('/api', csrfGuard);
 
@@ -168,7 +172,7 @@ app.get('/dl/:ver/:name', (req, res, next) => {
 });
 
 const stampedPages = new Map();
-for (const page of ['index.html', 'exam.html', 'result.html', 'admin/index.html', 'admin/login.html']) {
+for (const page of ['index.html', 'exam.html', 'result.html', 'crm.html', 'admin/index.html', 'admin/login.html']) {
   const html = fs.readFileSync(path.join(PUBLIC, page), 'utf8').replace(/(src|href)="(\/[^"?#]+\.(?:js|css))"/g, (m, attr, url) => {
     const file = assetFile(url);
     if (!fs.existsSync(file)) return m;
@@ -185,6 +189,11 @@ const pageFor = (p) => {
   if (stampedPages.has(`${rel.replace(/\/$/, '')}/index.html`)) return `${rel.replace(/\/$/, '')}/index.html`;
   return null;
 };
+// Personal exam link sent by the CRM: /e/<token> opens the CRM login page (the page reads the token from the path).
+app.get('/e/:token', (req, res, next) => {
+  if (!/^[\w-]{16,64}$/.test(req.params.token)) return next();
+  res.set('Cache-Control', 'no-store').type('html').send(stampedPages.get('crm.html'));
+});
 app.get(/.*/, (req, res, next) => {
   const page = pageFor(req.path);
   if (!page) return next();

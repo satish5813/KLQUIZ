@@ -44,6 +44,16 @@
     $('#mobile').closest('.grid-2').classList.toggle('hidden', nameOnly);
     $('#parent_mobile').closest('.field').classList.toggle('hidden', contact);
     $('#application_no').closest('.field').classList.toggle('hidden', !appNo);
+    // Edmission CRM exams: applicants log in on the applicant page with a one-time code (no form here).
+    const crm = t.registration_mode === 'crm';
+    $('#full_name').closest('.field').classList.toggle('hidden', crm);
+    if (crm) {
+      ['address', 'email', 'application_no'].forEach((id) => $(`#${id}`).closest('.field').classList.add('hidden'));
+      $('#mobile').closest('.grid-2').classList.add('hidden');
+      if (!waiting) $('#regBtn').textContent = 'Log in with registered email / mobile';
+      $('#resumeHint').textContent = 'This exam is only for applicants registered through KL admissions. You will get a one-time login code on your registered email / mobile.';
+      return;
+    }
     $('label[for=full_name]').textContent = nameOnly && !appNo ? 'Your full name' : 'Full name (as in 10th certificate)';
     $('#resumeHint').textContent = appNo
       ? 'Got disconnected? Enter the same application number and name to continue your exam.'
@@ -84,6 +94,7 @@
   $('#regForm').addEventListener('submit', (e) => {
     e.preventDefault();
     hideErr();
+    if (mode() === 'crm') { location.href = `/crm?test=${$('#test').value}`; return; }
     const problem = validate();
     if (problem) { showErr(problem); return; }
     withBusy($('#regBtn'), async () => {

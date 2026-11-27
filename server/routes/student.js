@@ -8,6 +8,8 @@ const {
 } = require('../security');
 const { testWindowState, sectionsWithPaper, createAttempt, finalize } = require('../exam');
 const proctor = require('../proctor');
+const crm = require('../crm');
+const mailer = require('../mailer');
 
 const router = express.Router();
 
@@ -51,6 +53,7 @@ router.get('/tests', (req, res) => {
 router.post('/register', registerLimiter, (req, res) => {
   const b = req.body;
   const test = get('SELECT * FROM tests WHERE id = ?', v.int(b.test_id, 'Exam', { min: 1 })) || fail(404, 'Exam not found');
+  if (test.registration_mode === 'crm') fail(403, 'This exam is only for applicants registered through KL admissions. Use the exam link sent to you, or log in with your registered email or mobile number.');
   const state = testWindowState(test);
   if (state !== 'open') fail(403, STATE_MSG[state]);
 
@@ -154,8 +157,135 @@ router.post('/logout', (req, res) => {
   res.json({ ok: true });
 });
 
+// ---------- CRM candidates (Edmission) ----------
+// Candidates pushed by the CRM log in with their personal link (/e/<token>) or with their registered email/mobile,
+// then a one-time code; there is no pass key. Before the exam starts, a live webcam photo is compared with the
+// applicant photo from the CRM.
+const crmLimiter = rateLimit({ windowMs: 10 * 60000, limit: 3000, standardHeaders: 'draft-7', legacyHeaders: false,
+  message: { error: 'Too many requests. Please wait a few minutes.' } });
+const NOT_FOUND = 'We could not find your registration for this exam. Use the exam link sent to you, or the email / mobile number you gave when applying.';
+const ist = (x) => new Date(x).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit' });
+const faceRequired = (st, test) => !!test.face_match && !!st.photo_file && st.face_status === 'pending'
+  && !get('SELECT 1 FROM attempts WHERE student_id = ?', st.id);
+
+function findCrmStudent(b) {
+  let st = null;
+  if (b.token) {
+    const tok = String(b.token);
+    if (/^[\w-]{16,64}$/.test(tok)) st = get('SELECT * FROM students WHERE link_token = ?', tok);
+  } else {
+    const tid = v.int(b.test_id, 'Exam', { min: 1 });
+    const login = v.str(b.login, 'Email or mobile number', { max: 254 }).toLowerCase();
+    const digits = login.replace(/[\s-]/g, '');
+    const mob = /^(\+?91)?[6-9]\d{9}$/.test(digits) ? digits.slice(-10) : '-';
+    st = get('SELECT * FROM students WHERE test_id = ? AND crm_id IS NOT NULL AND (email = ? OR mobile = ?) ORDER BY id LIMIT 1', tid, login, mob);
+  }
+  if (!st || !st.crm_id) fail(404, NOT_FOUND);
+  if (st.revoked) fail(403, 'Your registration for this exam has been cancelled. Please contact KL admissions.');
+  const test = get('SELECT * FROM tests WHERE id = ?', st.test_id);
+  if (test.registration_mode !== 'crm') fail(404, NOT_FOUND);
+  return { st, test };
+}
+function crmWindowCheck(test) {
+  const state = testWindowState(test);
+  if (state === 'open') return;
+  if (test.start_at && Date.now() < Date.parse(test.start_at)) fail(403, `Your exam opens on ${ist(test.start_at)}. Please come back then.`);
+  fail(403, STATE_MSG[state]);
+}
+const lockedOut = (st) => st.otp_lock_until && Date.now() < Date.parse(st.otp_lock_until);
+
+router.post('/crm/lookup', crmLimiter, (req, res) => {
+  const { st, test } = findCrmStudent(req.body);
+  const a = get('SELECT status FROM attempts WHERE student_id = ?', st.id);
+  res.json({
+    name: st.first_name || st.full_name, application_no: st.application_no,
+    exam: { name: test.name, start_at: test.start_at, end_at: test.end_at, duration_min: test.duration_min, state: testWindowState(test), opens: test.start_at ? ist(test.start_at) : null },
+    email: crm.maskEmail(st.email), phone: crm.maskPhone(st.mobile), submitted: !!(a && a.status === 'submitted'),
+  });
+});
+
+router.post('/crm/otp', crmLimiter, async (req, res) => {
+  const { st, test } = findCrmStudent(req.body);
+  crmWindowCheck(test);
+  const a = get('SELECT status FROM attempts WHERE student_id = ?', st.id);
+  if (a && a.status === 'submitted') fail(409, 'You have already submitted this exam.');
+  if (lockedOut(st)) fail(429, 'Too many wrong codes. Please wait 15 minutes and try again.');
+  if (st.otp_sent_at && Date.now() - Date.parse(st.otp_sent_at) < crm.OTP_RESEND_MS) fail(429, 'A code was just sent. Please wait a minute before asking for another one.');
+  const code = String(crypto.randomInt(0, 1000000)).padStart(6, '0');
+  run('UPDATE students SET otp_hash = ?, otp_expires = ?, otp_tries = 0, otp_sent_at = ? WHERE id = ?',
+    crm.otpHash(st.id, code), new Date(Date.now() + crm.OTP_TTL_MS).toISOString(), new Date().toISOString(), st.id);
+  const ch = mailer.channels();
+  let sent = [];
+  if (ch.email || ch.sms) {
+    sent = await mailer.sendOtp({ email: st.email, mobile: st.mobile, name: st.first_name || st.full_name, exam: test.name, otp: code });
+  } else if (process.env.NODE_ENV !== 'production') {
+    console.log(`[dev] login code for ${st.crm_id}: ${code}`);
+    sent = ['console'];
+  }
+  if (!sent.length) {
+    run('UPDATE students SET otp_sent_at = NULL WHERE id = ?', st.id);
+    fail(503, 'We could not send your login code right now. Please try again in a minute or contact the exam helpdesk.');
+  }
+  res.json({ ok: true, sent_to: sent.map((c) => (c === 'sms' ? crm.maskPhone(st.mobile) : c === 'email' ? crm.maskEmail(st.email) : 'the server log (test mode)')) });
+});
+
+router.post('/crm/verify', crmLimiter, (req, res) => {
+  const { st, test } = findCrmStudent(req.body);
+  if (lockedOut(st)) fail(429, 'Too many wrong codes. Please wait 15 minutes and ask for a new code.');
+  const otp = v.str(req.body.otp, 'Code', { max: 12 }).replace(/\D/g, '');
+  if (!st.otp_hash || !st.otp_expires || Date.now() > Date.parse(st.otp_expires)) fail(400, 'The code has expired. Please ask for a new code.');
+  const ok = otp.length === 6 && crypto.timingSafeEqual(Buffer.from(crm.otpHash(st.id, otp)), Buffer.from(st.otp_hash));
+  if (!ok) {
+    const tries = st.otp_tries + 1;
+    const lock = tries >= crm.OTP_MAX_TRIES;
+    run('UPDATE students SET otp_tries = ?, otp_lock_until = ?, otp_hash = ? WHERE id = ?',
+      tries, lock ? new Date(Date.now() + crm.OTP_LOCK_MS).toISOString() : null, lock ? null : st.otp_hash, st.id);
+    fail(401, lock ? 'Too many wrong codes. Please wait 15 minutes and ask for a new code.' : `Incorrect code. ${crm.OTP_MAX_TRIES - tries} attempt(s) left.`);
+  }
+  crmWindowCheck(test);
+  const a = get('SELECT status FROM attempts WHERE student_id = ?', st.id);
+  if (a && a.status === 'submitted') fail(409, 'You have already submitted this exam.');
+  // New session id: any other browser using this candidate's login is signed out.
+  const sess = crypto.randomBytes(16).toString('hex');
+  run('UPDATE students SET session_id = ?, otp_hash = NULL, otp_tries = 0, otp_lock_until = NULL WHERE id = ?', sess, st.id);
+  const ttl = (test.duration_min + 60) * 60;
+  res.cookie('kl_stu', sign({ sid: st.id, sess, role: 'student' }, ttl), cookieOpts(ttl * 1000));
+  res.clearCookie('kl_reg', { path: '/' });
+  res.json({ ok: true, face_required: faceRequired(st, test) });
+});
+
 // ---------- exam ----------
 router.use(requireStudent);
+
+router.get('/crm/me', (req, res) => {
+  const st = req.student;
+  const test = get('SELECT * FROM tests WHERE id = ?', st.test_id);
+  res.json({ crm: !!st.crm_id, name: st.first_name || st.full_name, face_required: !!st.crm_id && faceRequired(st, test), tries_left: Math.max(0, crm.FACE_TRIES - st.face_tries) });
+});
+
+const FACE_RESULT_KIND = { passed: 'face_verified', review: 'face_unsure', failed: 'face_mismatch' };
+
+router.post('/crm/face', async (req, res) => {
+  const st = req.student;
+  const test = get('SELECT * FROM tests WHERE id = ?', st.test_id);
+  if (!st.crm_id || !faceRequired(st, test)) return res.json({ done: true, status: st.face_status });
+  if (paced(`face:${st.id}`, 3000)) fail(429, 'Please wait a moment and try again.');
+  const jpeg = b64(req.body.image, 400000, 'image');
+  if (jpeg[0] !== 0xff || jpeg[1] !== 0xd8) fail(400, 'Invalid image');
+  const r = await crm.faceMatch(st, jpeg);
+  const tries = st.face_tries + 1;
+  let status = null;
+  if (r.result === 'match') status = 'passed';
+  else if (r.reason || tries >= crm.FACE_TRIES) status = r.result === 'mismatch' ? 'failed' : 'review'; // r.reason: the AI could not check: never block the candidate
+  const file = proctor.saveFile({ test_id: st.test_id, id: `face-${st.id}` }, 'face', 'jpg', jpeg);
+  run('UPDATE students SET face_tries = ?, face_status = COALESCE(?, face_status), face_checked_at = ?, face_file = ? WHERE id = ?',
+    tries, status, new Date().toISOString(), file, st.id);
+  if (status) return res.json({ done: true, status });
+  res.json({
+    done: false, tries_left: crm.FACE_TRIES - tries,
+    message: r.result === 'mismatch' ? 'Your photo did not match your application photo.' : 'We could not see your face clearly.',
+  });
+});
 
 const loadAttempt = (sid) => get('SELECT * FROM attempts WHERE student_id = ?', sid);
 
@@ -189,7 +319,12 @@ router.post('/start', (req, res) => {
   const test = get('SELECT * FROM tests WHERE id = ?', s.test_id);
   const state = testWindowState(test);
   if (state !== 'open') fail(403, STATE_MSG[state]);
+  if (s.revoked) fail(403, 'Your registration for this exam has been cancelled. Please contact KL admissions.');
+  if (s.crm_id && faceRequired(s, test)) fail(403, 'Please complete the face check first: open your exam link again.');
   a = tx(() => createAttempt(s, test, { ip: req.ip, ua: req.get('User-Agent') }));
+  if (s.crm_id && FACE_RESULT_KIND[s.face_status]) {
+    proctor.addEvent(a, 'ai', FACE_RESULT_KIND[s.face_status], `Face check before the exam (${s.face_tries} photo(s))`, s.face_file);
+  }
   res.json({ ok: true, status: a.status });
 });
 
@@ -325,6 +460,15 @@ router.post('/proctor/frame', async (req, res) => {
   if (jpeg[0] !== 0xff || jpeg[1] !== 0xd8) fail(400, 'Invalid image');
   if (reason === 'reference' ? paced(`${a.id}:ref`, 30000) : reason === 'periodic' ? paced(`${a.id}:frame`, 40000) : paced(`${a.id}:trigger`, 15000)) {
     return res.json({ alerts: [], paced: true });
+  }
+  const st = req.student;
+  if (st.crm_id && st.photo_file && !paced(`${a.id}:identity`, 30 * 60000)) {
+    const t = get('SELECT face_match FROM tests WHERE id = ?', a.test_id);
+    if (t.face_match) {
+      crm.faceMatch(st, jpeg, a.id).then((r) => {
+        if (r.result === 'mismatch') proctor.addEvent(a, 'ai', 'face_mismatch', 'Periodic identity check during the exam', proctor.saveFile(a, 'identity', 'jpg', jpeg));
+      }).catch((e) => console.error('identity check:', e.message));
+    }
   }
   res.json(await proctor.checkFrame(a, jpeg, reason, a.proctor_mode, a.proctor_lab));
 });

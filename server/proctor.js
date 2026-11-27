@@ -53,8 +53,12 @@ const KINDS = {
   // information
   reference: [0, 'Reference photo at the start of the exam'],
   snapshot: [0, 'Routine photo'],
+  // identity (CRM exams): live webcam photo compared with the applicant photo sent by the CRM
+  face_verified: [0, 'Face matched the applicant photo'],
+  face_unsure: [2, 'Face match with the applicant photo is unclear'],
+  face_mismatch: [3, 'Face does not match the applicant photo'],
 };
-const BROWSER_KINDS = Object.keys(KINDS).filter((k) => !k.startsWith('ai_') && k !== 'reference');
+const BROWSER_KINDS = Object.keys(KINDS).filter((k) => !k.startsWith('ai_') && !['reference', 'face_verified', 'face_unsure', 'face_mismatch'].includes(k));
 
 // The answer is 7 digits (e.g. "1000000"), not JSON: JSON came back pretty-printed at ~52 output tokens, the digits
 // take ~5, and output tokens cost 6 times input tokens - this roughly halves the price of every check.
@@ -237,4 +241,4 @@ function status() {
   return { failing, error: failing ? health.lastError : null, last_ok_at: health.lastOkAt ? new Date(health.lastOkAt).toISOString() : null };
 }
 
-module.exports = { status, KINDS, BROWSER_KINDS, MODEL, usdInr, checkFrame, saveAudio, addEvent, fileFor, risk, cost, askGemini, findings };
+module.exports = { status, KINDS, BROWSER_KINDS, MODEL, usdInr, checkFrame, saveAudio, addEvent, fileFor, risk, cost, askGemini, findings, saveFile };

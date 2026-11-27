@@ -215,6 +215,61 @@ db.exec(`CREATE TABLE IF NOT EXISTS attempt_questions (
 );
 CREATE INDEX IF NOT EXISTS idx_aq_question ON attempt_questions(question_id);`);
 
+// Edmission CRM integration. A test with registration_mode 'crm' admits only candidates the CRM pushed through the
+// partner API (paid applicants), until the registration cut-off. public_code is the exam code the CRM uses;
+// crm_taxonomies maps CRM course names to this test (one per line); results_published_at marks when marks were
+// released to the CRM; face_match compares a live webcam photo with the CRM photo before the exam starts.
+const tCols2 = db.prepare('PRAGMA table_info(tests)').all().map((c) => c.name);
+for (const [col, def] of [
+  ['public_code', 'TEXT'], ['crm_taxonomies', "TEXT NOT NULL DEFAULT ''"], ['reg_close_at', 'TEXT'],
+  ['results_published_at', 'TEXT'], ['face_match', 'INTEGER NOT NULL DEFAULT 1'],
+]) if (!tCols2.includes(col)) db.exec(`ALTER TABLE tests ADD COLUMN ${col} ${def}`);
+db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_tests_public_code ON tests(public_code) WHERE public_code IS NOT NULL');
+
+const sCols = db.prepare('PRAGMA table_info(students)').all().map((c) => c.name);
+for (const [col, def] of [
+  ['crm_id', 'TEXT'], ['application_no', 'TEXT'], ['first_name', 'TEXT'], ['last_name', 'TEXT'], ['taxonomy', 'TEXT'],
+  ['payment_at', 'TEXT'], ['app_submitted_at', 'TEXT'], ['photo_file', 'TEXT'], ['link_token', 'TEXT'],
+  ['revoked', 'INTEGER NOT NULL DEFAULT 0'], ['face_status', "TEXT NOT NULL DEFAULT 'pending'"], ['face_tries', 'INTEGER NOT NULL DEFAULT 0'],
+  ['face_checked_at', 'TEXT'], ['face_file', 'TEXT'], ['otp_hash', 'TEXT'], ['otp_expires', 'TEXT'], ['otp_tries', 'INTEGER NOT NULL DEFAULT 0'],
+  ['otp_sent_at', 'TEXT'], ['otp_lock_until', 'TEXT'], ['crm_updated_at', 'TEXT'],
+]) if (!sCols.includes(col)) db.exec(`ALTER TABLE students ADD COLUMN ${col} ${def}`);
+db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_students_crm ON students(crm_id) WHERE crm_id IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_students_link ON students(link_token) WHERE link_token IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_students_mobile ON students(test_id, mobile);`);
+
+// Webhook outbox: events waiting to be delivered to the CRM (retried with back-off for 24 hours).
+db.exec(`CREATE TABLE IF NOT EXISTS crm_outbox (
+  id INTEGER PRIMARY KEY,
+  event TEXT NOT NULL,
+  crm_id TEXT NOT NULL,
+  test_id INTEGER NOT NULL,
+  payload TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  next_at TEXT NOT NULL,
+  tries INTEGER NOT NULL DEFAULT 0,
+  sent_at TEXT,
+  failed INTEGER NOT NULL DEFAULT 0,
+  last_error TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_outbox_due ON crm_outbox(sent_at, failed, next_at);
+CREATE TABLE IF NOT EXISTS crm_idempotency (
+  key TEXT PRIMARY KEY,
+  status INTEGER NOT NULL,
+  body TEXT NOT NULL,
+  at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS crm_log (
+  id INTEGER PRIMARY KEY,
+  at TEXT NOT NULL,
+  method TEXT NOT NULL,
+  path TEXT NOT NULL,
+  status INTEGER NOT NULL,
+  ip TEXT,
+  error TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_crm_log_at ON crm_log(at);`);
+
 const all = (sql, ...p) => db.prepare(sql).all(...p);
 const get = (sql, ...p) => db.prepare(sql).get(...p);
 const run = (sql, ...p) => db.prepare(sql).run(...p);
