@@ -69,13 +69,13 @@ label { display: block; font-weight: 600; font-size: .88rem; margin-bottom: 4px;
 .field { margin-bottom: 14px; }
 .field .hint { font-size: .8rem; color: var(--muted); margin-top: 3px; }
 input[type=text], input[type=email], input[type=tel], input[type=password], input[type=number],
-input[type=datetime-local], input[type=search], select, textarea {
+input[type=datetime-local], input[type=search], input[type=url], select, textarea {
   width: 100%; padding: 10px 11px; border: 1px solid #cfd4dd; border-radius: 8px; font: inherit; font-size: 16px; color: inherit; background: #fff;
 }
 /* 16px fields on phones stop iOS zooming into the page when a field is tapped */
 @media (min-width: 640px) {
   input[type=text], input[type=email], input[type=tel], input[type=password], input[type=number],
-  input[type=datetime-local], input[type=search], select, textarea { padding: 9px 11px; font-size: inherit; }
+  input[type=datetime-local], input[type=search], input[type=url], select, textarea { padding: 9px 11px; font-size: inherit; }
 }
 textarea { resize: vertical; min-height: 80px; }
 input:focus, select:focus, textarea:focus { outline: 2px solid rgba(200, 32, 47, .25); border-color: var(--kl-red); }

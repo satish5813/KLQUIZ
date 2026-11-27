@@ -104,7 +104,9 @@
     try { return await fn(); } finally { btn.disabled = false; btn.textContent = label; }
   }
 
-  const fmtDate = (iso) => (iso ? new Date(iso).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' }) : '—');
+  // SQLite CURRENT_TIMESTAMP values ('2026-11-27 07:01:10') are UTC but carry no zone; mark them as UTC so IST is shown.
+  const asDate = (v) => new Date(/^\d{4}-\d\d-\d\d \d\d:\d\d(:\d\d(\.\d+)?)?$/.test(String(v)) ? `${String(v).replace(' ', 'T')}Z` : v);
+  const fmtDate = (iso) => (iso ? asDate(iso).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' }) : '—');
   const fmtDuration = (sec) => {
     if (sec === null || sec === undefined) return '—';
     const s = Math.max(0, Math.round(sec));
